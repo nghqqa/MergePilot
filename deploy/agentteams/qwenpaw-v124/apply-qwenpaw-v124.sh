@@ -147,7 +147,7 @@ else
     -e AGENTTEAMS_MINIO_PASSWORD="$QP_MINIO_PASSWORD" \
     -e AGENTTEAMS_DASHBOARD=0 \
     -v "$QP_VOLUME:/data" \
-    -v /run/host-services/docker.proxy.sock:/var/run/docker.sock \
+    -v "${QP_DOCKER_SOCK:-/run/host-services/docker.proxy.sock}:/var/run/docker.sock" \
     -p "127.0.0.1:$QP_PORT_CTRL:8090" -p "127.0.0.1:$QP_PORT_MATRIX:6167" -p "127.0.0.1:$QP_PORT_MINIO:9000" \
     "$IMG_CTRL" >/dev/null
   log "controller 已创建（digest 锁定；FS endpoint/凭据已注入）"

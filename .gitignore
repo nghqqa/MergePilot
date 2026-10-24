@@ -61,4 +61,8 @@ deploy/agentteams-beta/auth-proxy/rendered/
 # 注意：豁免必须放在所有全局规则之后（gitignore 最后匹配规则胜出）。
 !benchmarks/review-quality/
 !benchmarks/review-quality/samples/
-!benchmarks/review-quality/samples/**ctrl-sa-token
+!benchmarks/review-quality/samples/**
+# agentteams 安装器凭据产物（#520 事故收口：脚本产出物一律不入仓；实际写入位置=仓库外 $QP_SECRET_DIR）
+**/ctrl-sa-token
+**/console-wire.env
+**/workers-readback.json

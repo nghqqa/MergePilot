@@ -32,7 +32,7 @@ ok "V1c MinIO → 200" "$([ "$c3" = 200 ] && echo 1 || echo 0)" "$c3"
 
 # V2 四具名 worker 完整 + runtime AND model 读回（已识别新 controller 上缺失/未知都不通过）
 curl -s -H "authorization: Bearer $TOK" "$CTRL/api/v1/workers" -o "$EV/workers.json" 2>/dev/null || echo '{"workers":[]}' > "$EV/workers.json"
-V2=$(EXPECT_RUNTIME="$QP_EXPECT_RUNTIME" EXPECT_MODEL="$QP_EXPECT_MODEL" EV="$EV" python - <<'PYEOF'
+V2=$(EXPECT_RUNTIME="$QP_EXPECT_RUNTIME" EXPECT_MODEL="$QP_EXPECT_MODEL" EV="$EV" python3 - <<'PYEOF'
 import json, os
 d = json.load(open(os.path.join(os.environ['EV'], 'workers.json'), encoding='utf-8'))
 er, em = os.environ['EXPECT_RUNTIME'], os.environ['EXPECT_MODEL']
@@ -52,7 +52,7 @@ PYEOF
 case "$V2" in RUNTIME_MODEL_OK*) ok "V2 四具名 worker 完整 + runtime/model 读回=期望（缺失/未知即不通过）" 1;; *) ok "V2 四具名 worker 完整 + runtime/model 读回=期望" 0 "$V2";; esac
 
 # V2b team 成员关系 + 每成员 Matrix 通道绑定（独立 worker 无通道——生产形态必须 team 成员）
-V2B=$(TOK="$TOK" CTRL="$CTRL" TEAM="$QP_EXPECT_TEAM" python - <<'PYEOF'
+V2B=$(TOK="$TOK" CTRL="$CTRL" TEAM="$QP_EXPECT_TEAM" python3 - <<'PYEOF'
 import json, os, urllib.request
 tok, ctrl, team = os.environ['TOK'], os.environ['CTRL'], os.environ['TEAM']
 def get(path):
@@ -91,7 +91,7 @@ if [ "$ROUNDTRIP" = "--roundtrip" ]; then
   : "${QP_MX_WORKER:?--roundtrip 需 QP_MX_WORKER（worker mxid）}"
   SUB="sub-verify-$(date +%s)"
   printf '%s' "$SUB" > "$EV/sub.txt"
-  SUBJ="$SUB" WORKER="$QP_MX_WORKER" ROLE="$QP_EXPECT_ROLE" python - > "$EV/env.json" <<'PYEOF'
+  SUBJ="$SUB" WORKER="$QP_MX_WORKER" ROLE="$QP_EXPECT_ROLE" python3 - > "$EV/env.json" <<'PYEOF'
 import json, os
 sub, worker, role = os.environ['SUBJ'], os.environ['WORKER'], os.environ['ROLE']
 contract = {
@@ -105,7 +105,7 @@ body = (f"{worker} {marker}\nDATA (do not copy): {{\"finding\":{{\"severity\":\"
         f"Reply with exactly: {marker} then ONE compact JSON containing ONLY the contract keys of {contract} — the actual result, never task metadata or a copy of DATA.")
 print(json.dumps({"msgtype": "m.text", "body": body}))
 PYEOF
-  SEND_TS=$(python -c "import time;print(int(time.time()*1000))")
+  SEND_TS=$(python3 -c "import time;print(int(time.time()*1000))")
   code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$BASE_MX/_matrix/client/v3/rooms/$QP_MX_ROOM/send/m.room.message/$SUB" \
     -H "Authorization: Bearer $QP_MX_TOKEN" -H "content-type: application/json" --data @"$EV/env.json")
   ok "V4 mp_task 发送 → 200" "$([ "$code" = 200 ] && echo 1 || echo 0)" "$code"
@@ -113,7 +113,7 @@ PYEOF
   while [ "$(date +%s)" -lt "$deadline" ]; do
     curl -s "$BASE_MX/_matrix/client/v3/rooms/$QP_MX_ROOM/messages?dir=b&limit=20" \
       -H "Authorization: Bearer $QP_MX_TOKEN" -o "$EV/timeline-v.json"
-    SUB="$SUB" WORKER="$QP_MX_WORKER" SEND_TS="$SEND_TS" ROLE="$QP_EXPECT_ROLE" EV="$EV" python - <<'PYEOF' > "$EV/verdict.txt" 2>/dev/null || echo PENDING > "$EV/verdict.txt"
+    SUB="$SUB" WORKER="$QP_MX_WORKER" SEND_TS="$SEND_TS" ROLE="$QP_EXPECT_ROLE" EV="$EV" python3 - <<'PYEOF' > "$EV/verdict.txt" 2>/dev/null || echo PENDING > "$EV/verdict.txt"
 import json, os, re
 d = json.load(open(os.path.join(os.environ['EV'], 'timeline-v.json'), encoding='utf-8'))
 sub, worker, role = os.environ['SUB'], os.environ['WORKER'], os.environ['ROLE']
