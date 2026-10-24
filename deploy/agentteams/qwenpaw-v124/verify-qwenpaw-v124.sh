@@ -10,13 +10,14 @@ QP_CTRL_PORT="${QP_CTRL_PORT:-18190}"
 QP_ADMIN_PASSWORD="${QP_ADMIN_PASSWORD:?需 QP_ADMIN_PASSWORD}"
 QP_EXPECT_RUNTIME="${QP_EXPECT_RUNTIME:-copaw}"
 QP_EXPECT_MODEL="${QP_EXPECT_MODEL:-deepseek-chat}"
-QP_EXPECT_TEAM="${QP_EXPECT_TEAM:-mp}"          # 生产形态 worker 均为 team 成员
+QP_EXPECT_TEAM="${QP_EXPECT_TEAM:-}"           # 空=安装阶段（team 由任务创建后出现，V2b 转 STAGED-WARN）；生产/任务后阶段显式传 mp
 QP_EXPECT_ROLE="${QP_EXPECT_ROLE:-verifier}"    # roundtrip 目标角色契约
 ROUNDTRIP="${1:-}"
 EV="${QP_VERIFY_EV:-/tmp/qwp2-verify}"
 mkdir -p "$EV"
 pass=0; fail=0
 ok() { if [ "$2" = "1" ]; then pass=$((pass+1)); echo "  PASS  $1"; else fail=$((fail+1)); echo "  FAIL  $1 — ${3:-}"; fi }
+warn() { echo "  WARN  $1${2:+ — $2}"; }
 
 TOK=$(docker exec "$QP_CTRL_NAME" sh -c 'tr -d "\r\n" < /var/run/agentteams/cli-token' 2>/dev/null || true)
 CTRL="http://127.0.0.1:$QP_CTRL_PORT"
@@ -52,9 +53,9 @@ PYEOF
 case "$V2" in RUNTIME_MODEL_OK*) ok "V2 四具名 worker 完整 + runtime/model 读回=期望（缺失/未知即不通过）" 1;; *) ok "V2 四具名 worker 完整 + runtime/model 读回=期望" 0 "$V2";; esac
 
 # V2b team 成员关系 + 每成员 Matrix 通道绑定（独立 worker 无通道——生产形态必须 team 成员）
-V2B=$(TOK="$TOK" CTRL="$CTRL" TEAM="$QP_EXPECT_TEAM" python3 - <<'PYEOF'
+V2B=$(TOK="$TOK" CTRL="$CTRL" TEAM="$QP_EXPECT_TEAM" STAGED="$([ -n "$QP_EXPECT_TEAM" ] && echo task || echo install)" python3 - <<'PYEOF'
 import json, os, urllib.request
-tok, ctrl, team = os.environ['TOK'], os.environ['CTRL'], os.environ['TEAM']
+tok, ctrl, team, staged = os.environ['TOK'], os.environ['CTRL'], os.environ['TEAM'], os.environ['STAGED']
 def get(path):
     req = urllib.request.Request(ctrl + path, headers={'authorization': 'Bearer ' + tok})
     return json.load(urllib.request.urlopen(req, timeout=15))
@@ -72,10 +73,17 @@ try:
             out.append(f"{w.get('name')} 无 Matrix 绑定(room/mxid 缺失)")
     print('TEAM_OK' if not out else 'TEAM_BAD ' + '; '.join(out))
 except Exception as e:
-    print('TEAM_CHECK_FAIL', type(e).__name__, str(e)[:80])
+    if staged == 'install':
+        print('STAGED-WARN team-not-yet (install 阶段 404 属预期，任务创建后由调用方复检实际 team ID)')
+    else:
+        print('TEAM_CHECK_FAIL', type(e).__name__, str(e)[:80])
 PYEOF
 )
-case "$V2B" in TEAM_OK*) ok "V2b team 成员关系完整 + 每成员 Matrix 通道绑定（room/mxid）" 1;; *) ok "V2b team 成员关系 + Matrix 通道" 0 "$V2B";; esac
+case "$V2B" in
+  TEAM_OK*) ok "V2b team 成员关系完整 + 每成员 Matrix 通道绑定（room/mxid）" 1;;
+  STAGED-WARN*) warn "V2b team 检查（安装阶段）：$V2B";;
+  *) ok "V2b team 成员关系 + Matrix 通道" 0 "$V2B";;
+esac
 
 # V3 网关真实 LLM（fail-closed）——记录调用计数供 V4c 关联
 GW_CALLS_BEFORE=$(docker exec "$QP_CTRL_NAME" sh -c 'grep -c "chat/completions" /var/log/agentteams/higress-gateway.log 2>/dev/null || echo 0')

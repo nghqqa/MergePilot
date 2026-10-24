@@ -8,8 +8,8 @@ import http from 'node:http';
 const REPO = { id: 99001, full_name: 'iso/test', default_branch: 'main',
   html_url: 'https://gitee.example/iso/test', private: false };
 const USER = { login: 'iso-operator', id: 150000001, name: 'ISO Operator' };
-const HEAD_SHA = 'f00d4444f00d4444f00d4444f00d4444f00d4444';
-const BASE_SHA = '0000000000000000000000000000000000000000';
+const HEAD_SHA = 'c0ffee00c0ffee00c0ffee00c0ffee00c0ffee0';
+const BASE_SHA = 'c0ffee00c0ffee00c0ffee00c0ffee00c0ffee0';
 const PR = {
   number: 1, state: 'open', title: 'iso: eval→int 替换（四角色验收样本）',
   html_url: 'https://gitee.example/iso/test/pull/1',

@@ -16,7 +16,7 @@ QP_PORT_MATRIX="${QP_PORT_MATRIX:-18186}"
 QP_PORT_MINIO="${QP_PORT_MINIO:-19100}"
 QP_PORT_MGR_CONSOLE="${QP_PORT_MGR_CONSOLE:-18889}"   # 生产旧栈占 18888——错开
 QP_ADMIN_USER="${QP_ADMIN_USER:-admin}"
-QP_SECRET_FILE="${QP_SECRET_FILE:-$HOME/.qwp2-secrets.env}"
+QP_SECRET_FILE="${QP_SECRET_FILE:-$HOME/.qwp2-secrets.env}"  # 入口可传 QP_SECRET_DIR 对应文件覆盖
 # FS 配置（controller 写对象存储的实际凭据面——2026-10-10 实测缺失即 replan 500）
 FS_BUCKET="${FS_BUCKET:-agentteams-storage}"
 QP_AUTH_TOKEN_FILE="${QP_AUTH_TOKEN_FILE:-/var/run/agentteams/cli-token}"
@@ -115,7 +115,7 @@ else
     -e AGENTTEAMS_CONTROLLER_URL="http://$QP_CTRL_NAME:8090" \
     -e AGENTTEAMS_DOCKER_NETWORK="$QP_NETWORK" \
     -e AGENTTEAMS_DATA_DIR=/data \
-    -e AGENTTEAMS_RESOURCE_PREFIX=qwp2- \
+    -e AGENTTEAMS_RESOURCE_PREFIX="${QP_RESOURCE_PREFIX:-qwp2-}" \
     -e AGENTTEAMS_WORKSPACE_DIR=/tmp/qwp2-ws \
     -e AGENTTEAMS_HOST_SHARE_DIR=/tmp/qwp2-host \
     -e AGENTTEAMS_MATRIX_URL="http://$QP_CTRL_NAME:6167" \
