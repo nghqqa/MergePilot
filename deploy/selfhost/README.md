@@ -33,9 +33,10 @@ curl http://127.0.0.1:48500/api/health
 启动 bootstrap 会在库内创建唯一初始管理员（幂等，只补缺失不覆盖已有成员关系）。
 管理员要能在生产模式登录，`MU_BOOTSTRAP_ADMIN_SUBJECT` 必须写成
 **`github-oauth:<你的GitHub数字id>`**（或 `gitee-oauth:<数字id>`；数字 id 见
-`https://api.github.com/users/<login>` 的 `id` 字段）——bootstrap 会按该前缀把身份落成
-对应 provider 的行，OAuth 登录才能命中（`main` 含 2026-10-23 修复；**rc7 镜像**仍把该值
-落成 fixture 死行，rc7 安装者请用下方「rc7 过渡路径」）：
+`https://api.github.com/users/<login>` 的 `id` 字段）。**subject 契约=完整 provider
+前缀串**（与 OAuth 登录落库的 subject 同形，bootstrap 不去前缀、仅把身份行的 provider
+列落成对应真实 provider）。含此修复的镜像自 **rc8 起生效**；**rc7 镜像**仍把该值落成
+fixture 死行，rc7 安装者请用下方「rc7 过渡路径」：
 
 ```bash
 MU_BOOTSTRAP_ADMIN_LOGIN=<你的管理员显示名>            # 缺省 pilot-admin

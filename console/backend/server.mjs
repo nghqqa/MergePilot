@@ -863,11 +863,16 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     // schema init 有界重试（rc.35 生产切换实测）：docker run 与 network connect
     // （DNS 生效）存在竞速窗口——首次 ENOTFOUND 不应永久失败。6 次×5s 覆盖
     // swap 工具 60s 健康循环；耗尽后业务 API 保持 fail-closed（语义不变）。
-    ensureMuReadyWithRetry(process.env, { onAttempt: (i, max, err) => {
-      if (err) console.error('[mu] schema init failed (attempt ' + i + '/' + max + '):',
-        String(err?.message ?? err).slice(0, 120));
-      else console.log('[mu] schema init ok (attempt ' + i + '/' + max + ')');
-    } }).then((ok) => {
+    // 重试节奏 env 可调（默认 6×5s 不变；测试/演练可下调——耗尽即退出进程，见下）
+    ensureMuReadyWithRetry(process.env, {
+      max: Number(process.env.MU_SCHEMA_INIT_MAX_RETRIES || 6),
+      waitMs: Number(process.env.MU_SCHEMA_INIT_WAIT_MS || 5000),
+      onAttempt: (i, max, err) => {
+        if (err) console.error('[mu] schema init failed (attempt ' + i + '/' + max + '):',
+          String(err?.message ?? err).slice(0, 120));
+        else console.log('[mu] schema init ok (attempt ' + i + '/' + max + ')');
+      },
+    }).then((ok) => {
       // 2026-10-23 干净环境首装实证：耗尽后常驻 fail-closed 需人工重启才恢复——
       // 改为退出进程交由容器重启策略自愈（unless-stopped 下自动重跑整个 boot，
       // pg 恢复后无需人工介入；fail-closed 语义不变，只是把「重启容器可重试」自动化）
