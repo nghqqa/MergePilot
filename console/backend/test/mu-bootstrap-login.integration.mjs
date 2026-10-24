@@ -97,6 +97,7 @@ const setCookiesOf = (res) => (res.headers.getSetCookie?.() ?? [res.headers.get(
   .map((c) => c.split(';')[0]);
 const muSessionOf = (res) => setCookiesOf(res).find((c) => c.startsWith('mu_session=')) ?? null;
 
+let mainError = null;
 try {
   // 等 boot 期异步 schema init 就绪（/api/health mu_schema_ready=true 再直查库）
   {
@@ -183,12 +184,24 @@ try {
       `SELECT role, state FROM mu.membership WHERE membership_id = $1`, [mem0.membership_id])).rows[0];
     ok('BL4b 已撤销 revoked 经重跑 bootstrap 不复活', mem2.state === 'revoked', mem2);
   }
+} catch (e) {
+  // 意外异常/初始化超时走这里——不得被 finally 的清理吞掉
+  mainError = e;
 } finally {
-  __resetOAuthClient();
-  __resetGiteeOAuthClient();
-  server.close();
+  // 清理通道：每项独立 try——单项清理失败既不得掩盖主流程原始失败，
+  // 也不得把失败转成成功（退出码恒非零）
+  const cleanupErrors = [];
+  try { __resetOAuthClient(); } catch (e) { cleanupErrors.push(e); }
+  try { __resetGiteeOAuthClient(); } catch (e) { cleanupErrors.push(e); }
+  try { await new Promise((r) => server.close(() => r())); } catch (e) { cleanupErrors.push(e); }
+  try { await pool.end(); } catch (e) { cleanupErrors.push(e); }
   Object.assign(process.env, savedEnv);
-  execFileSync('docker', ['rm', '-f', CTR], { stdio: 'pipe' });
+  try { execFileSync('docker', ['rm', '-f', CTR], { stdio: 'pipe' }); } catch (e) { cleanupErrors.push(e); }
+
   console.log(`mu-bootstrap-login.integration: ${pass} pass / ${fail} fail`);
-  process.exit(fail ? 1 : 0);
+  if (mainError) console.error('MAIN-FAILURE: ' + (mainError && mainError.stack ? mainError.stack : String(mainError)));
+  for (const e of cleanupErrors) console.error('CLEANUP-FAILURE: ' + (e && e.message ? e.message : String(e)));
+  // process.exitCode（非 process.exit）：不吞待写输出；断言失败/意外异常/超时=1，
+  // 仅清理失败=2（仍非零），全过=0
+  process.exitCode = (mainError || fail > 0) ? 1 : (cleanupErrors.length ? 2 : 0);
 }
