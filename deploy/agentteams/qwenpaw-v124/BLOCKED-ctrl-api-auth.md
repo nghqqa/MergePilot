@@ -1,4 +1,13 @@
-# BLOCKED：v1.2.4 embedded ctrl 管理 API 认证（2026-10-24，干净环境首装波）
+# 【已勘误撤销】v1.2.4 ctrl 管理 API「认证阻塞」——真因=安装器 sh -c 传参 bug（2026-10-25 勘误）
+
+> **结论变更**：#519 波记录的「六类 bearer 全 401 认证阻塞」**不是 ctrl 缺陷**——
+> 真因=安装器 api() 助手把 token 放 $0、URL 放 $@，Authorization 头恒为空
+> （sh -c 约定：首个后续参数=$0）。修正（token=$1+shift）后三态验证 PASS：
+> 有效凭据 200 / 错误凭据 401 / 无凭据 401。同 digest 从未需要「环境差异」解释。
+> 行为回归已入 CI（test/agentteams-install-helpers.test.mjs，占位值捕获 argv）。
+> 下文原始记录保留作归档，其中的「TokenReview 404」「环境性差异」推断均不成立。
+
+## 【原记录·已证伪】v1.2.4 embedded ctrl 管理 API 认证（2026-10-24）
 
 ## 状态
 
