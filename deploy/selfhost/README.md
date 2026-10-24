@@ -1,17 +1,17 @@
-# MergePilot 自托管部署（rc.35.6-rc3 预发布）
+# MergePilot 自托管部署（rc.35.6-rc7 预发布）
 
-> 版本：`v0.2.0-beta.6-rc.35.6-rc3`（`/api/health` version 真源）· 源码 tag commit `8f8cfb1f3b81463a33c88e49202030e7abaeb43d`
-> · 镜像 pull digest（OCI index）：`sha256:aec584ead1314760ab72d021a820ed5cf3ae4f8973df580dd7df252f8dcc5ae3`
-> （tag `v0.2.0-beta.6-rc.35.6-rc3` 与该 index 同源；index 内 linux/amd64 manifest 与 config
+> 版本：`v0.2.0-beta.6-rc.35.6-rc7`（`/api/health` version 真源）· 源码 tag commit `b7a0fcaf63ce3157a626c41918c8fdf60547ad74`
+> · 镜像 pull digest（OCI index）：`sha256:a13ecb98558363132f5153e802b6c285ba8457810a530d1b05b4258344aef7b3`
+> （tag `v0.2.0-beta.6-rc.35.6-rc7` 与该 index 同源；index 内 linux/amd64 manifest 与 config
 > digest 为另外两个不同对象，勿混称。本地 `docker image inspect` 的 `.Id` 取决于引擎
 > 存储模式——核验以 `RepoDigests`（在线）/ tar 文件 SHA256（离线）为准，不要拿 `.Id`
 > 直接对照 index digest；可执行核验命令见「镜像获取与校验」）。
 > 已发布 GHCR（不可变 digest，**预发布候选**——保持候选身份，非最终 rc.35.6）。离线 tar
 > 与源码构建为等效替代途径，校验方式见下。
 > 供应链档案：SBOM（CycloneDX，47 组件）、trivy 扫描（1 MEDIUM / 0 HIGH/CRITICAL /
-> secrets=0）、离线 tar SHA256 见「镜像获取与校验」与 [Release 附件](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc3)。
-> 相对 rc.35.6-rc2：schema **v29 不变（零迁移）**；新增 run 页知识库参考（RAG V1，
-> reference only——按需检索、可追溯引用）与 review-aux 缺省语义模型修复（#487/#488）。
+> secrets=0）、离线 tar SHA256 见「镜像获取与校验」与 [Release 附件](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc7)。
+> 相对 rc.35.6-rc6：schema **v29 不变（零迁移）**；rc7 变更明细见
+> [Release 说明](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc7)。
 > 能力口径见 [docs/delivery/CAPABILITY-MATRIX.md](../../docs/delivery/CAPABILITY-MATRIX.md)。
 
 ## 快速开始
@@ -26,6 +26,30 @@ curl http://127.0.0.1:48500/api/health
 
 首次启动自动完成 schema 初始化（至 v29）；随后访问 `http://127.0.0.1:48500/multiuser`
 完成 GitHub OAuth 登录（首个用户需先经邀请，见「多租户与 webhook」）。
+
+### 生产模式首次管理员登录（fixture 关闭，必读）
+
+生产 `.env` **不得设置 `MU_ALLOW_FIXTURE_LOGIN`**（fixture 登录默认关闭=403）。首次
+启动 bootstrap 会在库内创建唯一初始管理员（幂等，只补缺失不覆盖已有成员关系）。
+管理员要能在生产模式登录，`MU_BOOTSTRAP_ADMIN_SUBJECT` 必须写成
+**`github-oauth:<你的GitHub数字id>`**（或 `gitee-oauth:<数字id>`；数字 id 见
+`https://api.github.com/users/<login>` 的 `id` 字段）——bootstrap 会按该前缀把身份落成
+对应 provider 的行，OAuth 登录才能命中（`main` 含 2026-10-23 修复；**rc7 镜像**仍把该值
+落成 fixture 死行，rc7 安装者请用下方「rc7 过渡路径」）：
+
+```bash
+MU_BOOTSTRAP_ADMIN_LOGIN=<你的管理员显示名>            # 缺省 pilot-admin
+MU_BOOTSTRAP_ADMIN_SUBJECT=github-oauth:<你的GitHub数字id>   # 生产必填；缺省 fixture:<login>（仅开发用）
+```
+
+**rc7 过渡路径**（镜像早于修复时二选一）：
+1. 临时 `MU_ALLOW_FIXTURE_LOGIN=1` 完成首登与业务配置后**立即移除该变量并 `up -d`**；或
+2. DBA 直插身份行：`INSERT INTO mu.external_identity (user_id, provider, subject)
+   SELECT user_id,'github-oauth','<数字id>' FROM mu.app_user WHERE login='<管理员login>';`。
+
+**预配置项清单**：部署者自建 GitHub App（webhook）+ GitHub OAuth App（登录）并填入
+`.env` 各键；两个 App 均无 API 创建通道，须在 GitHub 网页创建（OAuth App callback 须与
+`MU_GITHUB_OAUTH_CALLBACK_URL` 同源）。
 
 ## 部署后首次使用
 
@@ -148,18 +172,18 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 
 | 途径 | 命令 | 校验 |
 |---|---|---|
-| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:aec584ead1314760ab72d021a820ed5cf3ae4f8973df580dd7df252f8dcc5ae3` | `docker image inspect <引用> --format '{{range .RepoDigests}}{{println .}}{{end}}'` 输出含 `@sha256:aec5…`（与引擎无关的权威核验；registry 侧可用 `docker buildx imagetools inspect <tag>` 的 Digest 行同值对照） |
-| 离线 tar | `sha256sum -c SHA256SUMS` 后 `docker load -i mergepilot-console-v0.2.0-beta.6-rc.35.6-rc3-offline.tar.gz` | tar SHA256 = `11cad0e9b6a36097e2e3e3a1f4c93b3212c50abf90ff6f58716072513e393b22`（第一权威）；加载后 `.Id` 与**同引擎**在线拉取记录的 `.Id` 比对一致（`.Id` 口径随引擎存储模式而异，跨引擎不比 `.Id`） |
+| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:a13ecb98558363132f5153e802b6c285ba8457810a530d1b05b4258344aef7b3` | `docker image inspect <引用> --format '{{range .RepoDigests}}{{println .}}{{end}}'` 输出含 `@sha256:a13e…`（与引擎无关的权威核验；registry 侧可用 `docker buildx imagetools inspect <tag>` 的 Digest 行同值对照） |
+| 离线 tar | `sha256sum -c SHA256SUMS` 后 `docker load -i mergepilot-console-v0.2.0-beta.6-rc.35.6-rc7-offline.tar.gz` | tar SHA256 = `4106ba9ec108b27f59d710f00847a4695d21c4881d4e28304ffe72958e28972f`（第一权威）；加载后 `.Id` 与**同引擎**在线拉取记录的 `.Id` 比对一致（`.Id` 口径随引擎存储模式而异，跨引擎不比 `.Id`） |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
-镜像内置 `MERGEPILOT_VERSION=v0.2.0-beta.6-rc.35.6-rc3`、`MERGEPILOT_GIT_COMMIT=8f8cfb1f3b81463a33c88e49202030e7abaeb43d`
+镜像内置 `MERGEPILOT_VERSION=v0.2.0-beta.6-rc.35.6-rc7`、`MERGEPILOT_GIT_COMMIT=b7a0fcaf63ce3157a626c41918c8fdf60547ad74`
 （`/api/health` 的 `version`/`git_commit` 即真源，git_commit 与源码 tag commit 一致）。
 
-**供应链档案（rc.35.6-rc3）**：
+**供应链档案（rc.35.6-rc7）**：
 
 - SBOM：CycloneDX · **47 组件**（`sbom-rc356rc3-cyclonedx.json`，随 Release 发布）；
 - 漏洞/秘密扫描：trivy（`trivy-rc356rc3-scan.json`）：**0 HIGH/CRITICAL，0 MEDIUM，secrets=0**（对照 rc.35.6-rc1：CVE-2026-85091 已闭合，无新增）；
-- 构建来源：源码 tag `v0.2.0-beta.6-rc.35.6-rc3`（commit `8f8cfb1f3b81463a33c88e49202030e7abaeb43d`，tag 与镜像同源，GIT_COMMIT 构建期注入）；
+- 构建来源：源码 tag `v0.2.0-beta.6-rc.35.6-rc7`（commit `b7a0fcaf63ce3157a626c41918c8fdf60547ad74`，tag 与镜像同源，GIT_COMMIT 构建期注入）；
 - RAG（可选）：run 页知识库引用需配置 RAGTRIAL_* env 并导入语料（见 RELEASE-CHECKLIST 与官网下载页）；
   schema v29 不变（零迁移，数据库双向兼容）；
 - 历史版本（rc.35.6-rc1 及更早）的 digest/附件以各自 Release 页为准，本文件只维护当前版本。
@@ -171,11 +195,11 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 ## 从源码构建
 
 ```bash
-git checkout v0.2.0-beta.6-rc.35.6-rc3      # 源码 tag（与镜像同源）
+git checkout v0.2.0-beta.6-rc.35.6-rc7      # 源码 tag（与镜像同源）
 docker build -f docker/Dockerfile.canonical-console \
-  --build-arg MERGEPILOT_VERSION=v0.2.0-beta.6-rc.35.6-rc3 \
+  --build-arg MERGEPILOT_VERSION=v0.2.0-beta.6-rc.35.6-rc7 \
   --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
-  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc3 .
+  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc7 .
 ```
 
 说明两点：① 前端 dist 由 Dockerfile 的 `frontend-builder` 阶段在**镜像构建内**执行
@@ -196,7 +220,8 @@ docker build -f docker/Dockerfile.canonical-console \
 - cchain 三键（`MERGEPILOT_MODEL_CACHE_DIR` / `MERGEPILOT_PROVIDER_ATTEST_URL` /
   `MERGEPILOT_RUN_BINDING_KEYSTORE`）：可选，三项不全时 cchain=BLOCKED（fail-closed 如实呈现）；
 - cchain 引导（首次转 READY 需四步，缺一会 BLOCKED）：
-  ① 模型目录放入 bge-m3 文件与安装流程生成的 `manifest.json`（sidecar 按 `BGE_MANIFEST` 校验）；
+  ① 模型目录放入 bge-m3 文件与安装流程生成的 `manifest.json`（sidecar 按 `BGE_MANIFEST` 校验）——
+     入卷与逐文件校验用 `MODEL_SRC=<模型目录> ./model-install.sh [卷名]`（见仓库同目录脚本）；
   ② `fxv.audit_events` 表需初始化（cchain 审计真写的前提）——
      `CREATE SCHEMA IF NOT EXISTS fxv; CREATE TABLE IF NOT EXISTS fxv.audit_events
      (id bigserial PRIMARY KEY, attempt_id text, kind text NOT NULL, from_state text,

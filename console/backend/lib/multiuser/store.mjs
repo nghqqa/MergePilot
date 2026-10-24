@@ -105,12 +105,20 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
   async function bootstrap() {
     const adminLogin = String(env.MU_BOOTSTRAP_ADMIN_LOGIN || env.CONSOLE_PILOT_USER || 'pilot-admin');
     const adminSubject = String(env.MU_BOOTSTRAP_ADMIN_SUBJECT || `fixture:${adminLogin}`);
+    // 2026-10-23 干净环境首装实证：OAuth 身份键=(provider='github-oauth'|'gitee-oauth', subject=裸数字id)，
+    // 此前带前缀的 MU_BOOTSTRAP_ADMIN_SUBJECT 落成 provider='fixture' 的死行——OAuth 登录永不命中。
+    // 形如 github-oauth:<数字id> / gitee-oauth:<数字id> 时按真实 provider 落行，
+    // 生产模式（fixture 关闭）首装的管理员才能经 OAuth 登录；其余值保持 fixture 旧行为。
+    const oauth = adminSubject.match(/^(github-oauth|gitee-oauth):(\d+)$/);
+    const identity = oauth
+      ? { provider: oauth[1], subject: oauth[2] }
+      : { provider: 'fixture', subject: adminSubject };
     const tenant = await ensureTenant({ slug: 'default', displayName: 'Migration Default Tenant', isMigrationTenant: true });
     const user = await ensureUser({ login: adminLogin, displayName: 'Pilot Admin (migrated)' });
-    await ensureIdentity({ userId: user.user_id, provider: 'fixture', subject: adminSubject });
+    await ensureIdentity({ userId: user.user_id, provider: identity.provider, subject: identity.subject });
     const membership = await ensureMembership({ tenantId: tenant.tenant_id, userId: user.user_id,
       role: 'platform_admin', onlyIfMissing: true });
-    return { tenant, user, membership };
+    return { tenant, user, membership, identityProvider: identity.provider };
   }
 
   // Beta Hardening W1：tenant 域审计必须归属（schema NOT NULL + 应用层前置拒绝）；

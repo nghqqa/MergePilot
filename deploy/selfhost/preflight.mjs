@@ -184,8 +184,12 @@ async function main() {
   {
     const portA = env.CONSOLE_PORT || '48500';
     const portB = env.WEBHOOK_INGRESS_PORT || '48590';
-    const ns = run(['netstat', '-ano']);
-    const clash = [portA, portB].filter((p) => ns.stdout.split('\n').some((l) => l.includes(':' + p + ' ') && /LISTEN/i.test(l)));
+    // 跨平台：Windows=netstat -ano；Linux=ss -ltn（回退 netstat -tln）；命令缺失/失败按空输出处理（不崩）
+    const ns = process.platform === 'win32'
+      ? run(['netstat', '-ano'])
+      : (run(['ss', '-ltn']).status === 0 ? run(['ss', '-ltn']) : run(['netstat', '-tln']));
+    const out = String(ns.stdout || '');
+    const clash = [portA, portB].filter((p) => out.split('\n').some((l) => l.includes(':' + p + ' ') && /LISTEN/i.test(l)));
     // 已由本 compose 占用的端口不算冲突（复跑场景）
     ok('宿主端口无占用冲突（' + portA + ' / ' + portB + '）', clash.length === 0, clash.length ? '被占用: ' + clash.join(',') + '（若为上一轮本栈可忽略）' : undefined);
   }
@@ -194,7 +198,7 @@ async function main() {
   {
     const vols = run(['docker', 'volume', 'ls', '--format', '{{.Name}}']);
     const want = ['mergepilot_pgdata', 'mergepilot_evidence', 'mergepilot_model-cache', 'mergepilot_keystore'];
-    const have = want.filter((v) => vols.stdout.includes(v));
+    const have = want.filter((v) => String(vols.stdout || '').includes(v));
     if (have.length) ok('既有数据卷识别（' + have.length + '/' + want.length + '）', true);
     else warnk('尚无数据卷（首次部署属正常）');
   }

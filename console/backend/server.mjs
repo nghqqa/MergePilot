@@ -868,7 +868,13 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
         String(err?.message ?? err).slice(0, 120));
       else console.log('[mu] schema init ok (attempt ' + i + '/' + max + ')');
     } }).then((ok) => {
-      if (!ok) console.error('[mu] schema init exhausted——业务 API 保持 fail-closed，重启容器可重试');
+      // 2026-10-23 干净环境首装实证：耗尽后常驻 fail-closed 需人工重启才恢复——
+      // 改为退出进程交由容器重启策略自愈（unless-stopped 下自动重跑整个 boot，
+      // pg 恢复后无需人工介入；fail-closed 语义不变，只是把「重启容器可重试」自动化）
+      if (!ok) {
+        console.error('[mu] schema init exhausted——退出进程交由容器重启策略自愈');
+        process.exit(1);
+      }
     });
 
     // rc.11 PR-A：平台级自动 job consumer——webhook 入队的 event_sync job 的常驻
