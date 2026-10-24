@@ -61,4 +61,4 @@ deploy/agentteams-beta/auth-proxy/rendered/
 # 注意：豁免必须放在所有全局规则之后（gitignore 最后匹配规则胜出）。
 !benchmarks/review-quality/
 !benchmarks/review-quality/samples/
-!benchmarks/review-quality/samples/**
+!benchmarks/review-quality/samples/**ctrl-sa-token
