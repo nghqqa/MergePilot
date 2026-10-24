@@ -2203,7 +2203,8 @@ export async function muApi(req, res, ctx) {
         return sendJson(res, 200, { ok: true, status: row?.status ?? 'revoked' });
       }
       // probe：probeConnection 实测（授权已验证的唯一口径——凭据文件存在≠可用）
-      const adapter = createGiteeAdapter({ env, credentialRef: conn.credential_ref });
+      const adapter = createGiteeAdapter({ env, credentialRef: conn.credential_ref,
+        apiBase: String(env.MU_GITEE_API_BASE ?? '').trim() || undefined });
       const probe = await adapter.probeConnection();
       const status = probe.reachable && probe.auth_ok ? 'valid'
         : probe.auth_ok === false ? 'denied' : 'unreachable';
@@ -2225,7 +2226,8 @@ export async function muApi(req, res, ctx) {
       const conn = await store.getForgeConnection(mu.tenantId, String(body.connection_id ?? ''));
       if (!conn || conn.status !== 'valid') return sendJson(res, 409, { error: { reason: 'connection_not_valid',
         message: '连接须先 probe 验证为 valid 才能绑定仓库（凭据存在≠授权可用）' } });
-      const adapter = createGiteeAdapter({ env, credentialRef: conn.credential_ref });
+      const adapter = createGiteeAdapter({ env, credentialRef: conn.credential_ref,
+        apiBase: String(env.MU_GITEE_API_BASE ?? '').trim() || undefined });
       // 归属核验：适配器读目标仓库（服务端确认连接可访问该仓库；只读 GET）
       const probe = await adapter.probeConnection({ repoFullName });
       if (!probe.auth_ok) return sendJson(res, 409, { error: { reason: 'repo_access_denied_by_probe',

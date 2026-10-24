@@ -89,6 +89,6 @@ print(f'minted token -> {out} (len={len(token)}, alg={header["alg"]}, kid={kid[:
 PY
 
 # 自证：带 token 打 worker 列表（只报状态码）
-CODE=$(docker exec "$QP_CTRL_NAME" sh -c 'curl -s -o /tmp/w.json -w "%{http_code}" -H "Authorization: Bearer $0" http://127.0.0.1:8090/api/v1/workers' _ "$(cat "$OUT")")
+CODE=$(docker exec "$QP_CTRL_NAME" sh -c 'TOK=$1; shift; curl -s -o /tmp/w.json -w "%{http_code}" -H "Authorization: Bearer $TOK" "$@"' _ "$(cat "$OUT")" http://127.0.0.1:8090/api/v1/workers)
 echo "workers-api-with-minted-token=$CODE"
 [ "$CODE" = "200" ] || { echo "FAIL: 铸造 token 未通过认证（HTTP $CODE）" >&2; exit 1; }
