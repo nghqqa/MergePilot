@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
-# install-agentteams-full.sh — QwenPaw v1.2.4 完整执行器栈统一安装入口。
+# install-agentteams-full.sh — QwenPaw v1.2.4 完整执行器栈统一安装入口 v3（冷启动+长效认证收口）。
 #
-# 流水线（顺序即契约；幂等可重跑，不覆盖已有身份/配置；任何失败=非零退出且不打印安装完成）：
-#   1. 依赖初始化   三镜像 digest 核验（缺失即拉取；拉取后必核验）
-#   2. 凭据         稳定 API token（AGENTTEAMS_AUTH_TOKEN_FILE 卷内受控文件；值/文件均出仓）
-#   3. ctrl/manager 就绪   调 apply-qwenpaw-v124.sh（controller 健康+Higress 播种+网关探测）
-#   4. 四 worker 置备   经 ctrl API（union body；幂等=列表→缺者建/在者对齐→逐 worker JSON 读回校验）
-#   5. CR env 校验   实读 worker 容器 spec.env（非 ctrl env 代替）
-#   6. console 接线清单   写出仓受控目录（0600，token 零回显）
-#   7. 健康验收   verify-qwenpaw-v124.sh
-#
-# 用法：QP_LLM_BASE_URL/QP_LLM_API_KEY/QP_LLM_MODEL 必填；其余配置见下方 CONFIG 块。
-# 请求助手参数契约：token 在 $1，消费后 shift——curl 只收到 URL/参数
-# （2026-10-24 事故：旧写法 token 放 $0、URL 放 $@ → Authorization 恒空 = 六类 bearer 全 401 真因）。
+# 冷启动顺序（契约，2026-10-25 收口）：
+#   1. 依赖初始化   三镜像 digest 核验
+#   2. 凭据目录     仓库外受控目录（0700 先于创建）
+#   3. ctrl/manager 就绪   apply（无 ctrl 时创建→健康等待→cli-token 落盘；token 读取只能在 ctrl 就绪后）
+#   4. 认证         读现行 cli-token → 铸长效 SA JWT（ctrl pki ES256）→ 三态自证（JWT 200/错 401/无 401）
+#                   → 后续一律用 JWT（跨 cli-token 轮换稳定；不关认证、不延有效期、不重启维持）
+#   5. 四 worker 置备   union body 幂等；逐 worker JSON 读回校验（runtime/model）
+#   6. CR 校验      双证据：ctrl API worker spec.env + worker 容器 Config.Env（docker inspect）
+#   7. Matrix 接线   console bot 幂等注册（凭据持久化于栈秘密文件；密码不轮换则登录即复用）
+#   8. console 接线清单   出仓 0600（MU_AGENTTEAMS_TOKEN=长效 JWT——console 跨轮换免重启）
+#   9. 健康验收   verify（分阶段：安装期查 worker 就绪；team ID 在任务创建后由调用方核对）
+# 任何失败=非零退出且不打印安装完成。
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-# ══ CONFIG（单一来源：runtime/model/端口/资源命名全部只在此定义 ══
+# ══ CONFIG（单一来源）══
 QP_CTRL_NAME="${QP_CTRL_NAME:-qwp2-controller}"
 QP_NETWORK="${QP_NETWORK:-qwp2-net}"
 QP_VOLUME="${QP_VOLUME:-qwp2-data}"
@@ -32,16 +32,14 @@ REG="higress-registry.cn-hangzhou.cr.aliyuncs.com/agentteams"
 IMG_CTRL="$REG/agentteams-embedded@sha256:d96eb4dd4cef0ba8f02cfea4bb114d00f248cd8ecac0b2ce909150bd3e56a289"
 IMG_MGR="$REG/agentteams-manager-qwenpaw@sha256:965517c923fe09b4e7238b294bc6511f2344acf6b04ca79a6b17059995555805"
 IMG_WORKER_QP="$REG/agentteams-qwenpaw-worker@sha256:4f91b1026fe116f87c639f19e92f7e1f26f59fb408a90425691c32f700c3a5f5"
-# 凭据/接线产物：仓库外受控目录（权限先于文件创建；绝不写入 repo 工作区）
 QP_SECRET_DIR="${QP_SECRET_DIR:-$HOME/.at-iso-secrets}"
-SA_TOKEN_FILE="$QP_SECRET_DIR/ctrl-api-token"
-WIRE_FILE="$QP_SECRET_DIR/console-wire.env"
 # ══════════════════════════════════════════════════════════════
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 log() { echo "[install] $*"; }
 command -v docker >/dev/null || fail "docker 不可达"
 command -v openssl >/dev/null || fail "openssl 不可达"
+command -v python3 >/dev/null || fail "python3 不可达"
 : "${QP_LLM_BASE_URL:?需 QP_LLM_BASE_URL}"
 : "${QP_LLM_API_KEY:?需 QP_LLM_API_KEY（秘密源注入，不入库不回显）}"
 : "${QP_LLM_MODEL:?需 QP_LLM_MODEL}"
@@ -54,51 +52,59 @@ for ref in "$IMG_CTRL" "$IMG_MGR" "$IMG_WORKER_QP"; do
   fi
   docker image inspect "$ref" >/dev/null 2>&1 || fail "digest 核验失败：$ref"
 done
-log "三镜像 digest 锚定就绪（embedded/manager-qwenpaw/qwenpaw-worker）"
+log "三镜像 digest 锚定就绪"
 
-# ── 2. 凭据（cli-token 即读即用）──
-# 实证（#520 续波）：ctrl 只认自身轮换签发的 cli-token（静态值/自铸 JWT/AGENTTEAMS_AUTH_TOKEN*
-# env 均不生效——曾误当凭据注入位，已在 BLOCKED 文档勘误）。cli-token 约 5 分钟轮换：
-# 读→试→非 200 重读（安装期窗口足够；console 长连接接线见接线清单内的轮换注记）。
-QP_SECRET_DIR="${QP_SECRET_DIR:-$HOME/.at-iso-secrets}"
-mkdir -p "$QP_SECRET_DIR"; chmod 700 "$QP_SECRET_DIR"
-SA_TOKEN_FILE="$QP_SECRET_DIR/ctrl-api-token"
-TOK=""
-for _try in $(seq 1 30); do
-  T=$(docker exec "$QP_CTRL_NAME" sh -c 'tr -d "
-" < /var/run/agentteams/cli-token' 2>/dev/null | tr -d "
-" || true)
-  if [ -n "$T" ]; then
-    C=$(docker exec "$QP_CTRL_NAME" sh -c 'T=$1; shift; curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $T" http://127.0.0.1:8090/api/v1/workers' _ "$T")
-    if [ "$C" = "200" ]; then TOK="$T"; printf '%s' "$TOK" > "$SA_TOKEN_FILE"; chmod 600 "$SA_TOKEN_FILE"; break; fi
-  fi
-  sleep 3
+# ── 2. 凭据目录（出仓；0700 先于创建）──
+mkdir -p "$QP_SECRET_DIR"
+chmod 700 "$QP_SECRET_DIR"
+QP_SECRET_FILE="$QP_SECRET_DIR/stack-secrets.env"
+get_secret() { grep -m1 "^$1=" "$QP_SECRET_FILE" 2>/dev/null | cut -d= -f2- | tr -d '\r\n' || true; }
+put_secret() { grep -v "^$1=" "$QP_SECRET_FILE" > "$QP_SECRET_FILE.tmp" 2>/dev/null || true; echo "$1=$2" >> "$QP_SECRET_FILE.tmp" && mv "$QP_SECRET_FILE.tmp" "$QP_SECRET_FILE"; chmod 600 "$QP_SECRET_FILE"; }
+for k in QP_ADMIN_PASSWORD QP_REGISTRATION_TOKEN QP_MINIO_USER QP_MINIO_PASSWORD; do
+  V="${!k:-$(get_secret "$k")}"
+  [ -n "$V" ] || V="$k-dummy-$(openssl rand -hex 12)"
+  put_secret "$k" "$V"
 done
-[ -n "$TOK" ] || fail "90s 内未取得可用 cli-token（ctrl 未就绪或轮换异常）"
-log "cli-token 即读即用（$SA_TOKEN_FILE，0600；轮换期约 5 分钟——长连接接线见清单注记）"
+QP_LLM_BASE_URL="${QP_LLM_BASE_URL}"; QP_LLM_MODEL="${QP_LLM_MODEL}"
+put_secret QP_LLM_BASE_URL "$QP_LLM_BASE_URL"
+put_secret QP_LLM_MODEL "$QP_LLM_MODEL"
+put_secret QP_LLM_API_KEY "$QP_LLM_API_KEY"
 
-# ── 3. ctrl/manager 就绪（apply 读 CONFIG 同源值）──
-export QP_CTRL_NAME QP_NETWORK QP_VOLUME QP_PORT_CTRL QP_PORT_MATRIX QP_PORT_MINIO QP_PORT_MGR_CONSOLE
-# docker socket 源：Docker Desktop=/run/host-services/docker.proxy.sock；原生 dockerd（WSL/Linux）=/var/run/docker.sock
+# ── 3. ctrl/manager 就绪（apply：无 ctrl 则创建；token 读取在此之后）──
 QP_DOCKER_SOCK="${QP_DOCKER_SOCK:-$([ -S /var/run/docker.sock ] && echo /var/run/docker.sock || echo /run/host-services/docker.proxy.sock)}"
-export QP_DOCKER_SOCK
+export QP_CTRL_NAME QP_NETWORK QP_VOLUME QP_PORT_CTRL QP_PORT_MATRIX QP_PORT_MINIO QP_PORT_MGR_CONSOLE QP_DOCKER_SOCK
 log "docker socket 源=$QP_DOCKER_SOCK"
-# 旧容器漂移守卫：token 文件 env 或 docker socket 挂载与期望不符 → 删容器（卷保留）让 apply 重建
+# 旧容器漂移守卫（只比对真实配置：docker socket 挂载；不比对已弃用的静态 token-file env）
 if docker ps -a --format '{{.Names}}' | grep -qx "$QP_CTRL_NAME"; then
-  HAS=$(docker exec "$QP_CTRL_NAME" env 2>/dev/null | grep -c '^AGENTTEAMS_AUTH_TOKEN_FILE=/data/api-token' || true)
   SOCK=$(docker inspect "$QP_CTRL_NAME" --format '{{range .Mounts}}{{if eq .Destination "/var/run/docker.sock"}}{{.Source}}{{end}}{{end}}')
-  if [ "$HAS" -lt 1 ] || [ "$SOCK" != "$QP_DOCKER_SOCK" ]; then
-    docker rm -f "$QP_CTRL_NAME" >/dev/null
-    log "旧 ctrl 配置漂移（token env 或 socket 挂载）——容器已删（卷保留），apply 将重建"
-  fi
+  [ "$SOCK" = "$QP_DOCKER_SOCK" ] || { docker rm -f "$QP_CTRL_NAME" >/dev/null; log "旧 ctrl socket 挂载漂移——容器已删（卷保留），apply 将重建"; }
 fi
 bash "$HERE/apply-qwenpaw-v124.sh"
 
-# 请求助手（$1=token 消费后 shift；curl 只收 URL/参数）
+# ── 4. 认证：现行 cli-token → 铸长效 SA JWT → 三态自证 ──
 api() { docker exec "$QP_CTRL_NAME" sh -c 'TOK=$1; shift; curl -s -o /tmp/at-out.json -w "%{http_code}" -H "Authorization: Bearer $TOK" "$@"' _ "$TOK" "$@"; }
+CT=$(docker exec "$QP_CTRL_NAME" sh -c 'tr -d "\r\n" < /var/run/agentteams/cli-token' 2>/dev/null | tr -d '\r\n' || true)
+[ -n "$CT" ] || fail "cli-token 文件缺失（ctrl 未完成引导）"
+QP_SA_NAME="${QP_SA_NAME:-$(echo "$QP_CTRL_NAME" | tr -d '-')-admin}"
+SA_TOKEN_FILE="$QP_SECRET_DIR/ctrl-sa-jwt"
+QP_SA_NAME="$QP_SA_NAME" bash "$HERE/mint-sa-token.sh" "$SA_TOKEN_FILE" >/dev/null 2>&1 || true
+JWT=$(cat "$SA_TOKEN_FILE" 2>/dev/null || true)
+C_JWT=$(TOK="$JWT" api http://127.0.0.1:8090/api/v1/workers)
+if [ "$C_JWT" = "200" ]; then
+  APITOK="$JWT"; log "长效 SA JWT 认证通过（跨 cli-token 轮换稳定）"
+else
+  C_CT=$(TOK="$CT" api http://127.0.0.1:8090/api/v1/workers)
+  [ "$C_CT" = "200" ] || fail "现行 cli-token 亦被拒（HTTP $C_CT）——ctrl 认证面异常"
+  APITOK="$CT"
+  log "警告：SA JWT 未获认证（$C_JWT）——本轮回退现行 cli-token（约 5 分钟轮换，长连接接线需在轮换后重读）"
+fi
+# 三态自证（有效/错误/无）
+C_W=$(TOK="at-iso-wrong-credential" api http://127.0.0.1:8090/api/v1/workers)
+C_N=$(TOK="" api http://127.0.0.1:8090/api/v1/workers)
+[ "$C_W" = "401" ] && [ "$C_N" = "401" ] || fail "认证三态异常（错=$C_W 无=$C_N）——拒绝在可疑认证面继续"
+log "认证三态自证通过（有效=200 错误=401 无=401；API 凭据口径=JWT 或现行 cli-token）"
 
-# ── 4. 四 worker 置备（union body；幂等；逐 worker JSON 读回校验）──
-# 定义源=console/backend/lib/multiuser/agents/agentteams-executor.mjs AGENTTEAMS_WORKERS（锁步）
+# ── 5. 四 worker 置备（union body；幂等；逐 worker JSON 读回校验）──
 WORKER_SPECS=(
   'mergepilot-leader|MergePilot 审查编排 Leader：只依据结构化 finding 摘要给出裁定建议，不执行任何写操作。'
   'mergepilot-reviewer|MergePilot 审查 Reviewer：基于脱敏 finding 摘要给出语义审查建议（JSON）。'
@@ -121,7 +127,6 @@ for spec in "${WORKER_SPECS[@]}"; do
   fi
   case "$CODE" in 200|201|409) log "worker $name 置备（$CODE）";; *) fail "worker $name 置备失败（HTTP $CODE）";; esac
 done
-# 读回校验：逐 worker JSON 解析 runtime/model（宿主 python；漂移=失败，无吞错）
 api "$CTRL_BASE/api/v1/workers" >/dev/null
 docker exec "$QP_CTRL_NAME" cat /tmp/at-out.json > "$QP_SECRET_DIR/workers-readback.json"
 chmod 600 "$QP_SECRET_DIR/workers-readback.json"
@@ -147,41 +152,79 @@ case "$RD" in
   *) fail "worker 读回校验失败：$RD";;
 esac
 
-# ── 5. CR env 校验（实读 worker 容器 spec.env——非 ctrl env 代替）──
-# worker 容器由 ctrl 经 docker sock 创建（与 ctrl 共 netns，名=qwp2-worker-<name>）
+# ── 6. CR 校验（双证据：worker 存储的 CR desired state（runtime/runtime.yaml=MemberRuntimeConfig）
+#         + worker 容器 Config.Env（实际配置）。v1.2.4 API 列表为扁平形状、无 spec.env 字段——
+#         CR 持久化读自 worker 侧镜像存储，不以 docker exec env 代替 CR 证据）──
+# 等待 CR 投影（worker 启动 mirror 需要时间；最长 120s）
+CR_READY=0
+for _w in $(seq 1 24); do
+  N=$(docker exec "qwp2-worker-mergepilot-leader" sh -c 'test -f /root/agentteams-fs/agents/mergepilot-leader/runtime/runtime.yaml && echo ok' 2>/dev/null || true)
+  [ "$N" = "ok" ] && { CR_READY=1; break; }
+  sleep 5
+done
+[ "$CR_READY" = "1" ] || fail "CR desired state 未投影（leader 容器内 runtime/runtime.yaml 120s 未出现）"
 for spec in "${WORKER_SPECS[@]}"; do
   name="${spec%%|*}"; wc="qwp2-worker-$name"
-  if docker ps --format '{{.Names}}' | grep -qx "$wc"; then
-    WENV=$(docker exec "$wc" env 2>/dev/null || docker inspect "$wc" --format '{{range .Config.Env}}{{println .}}{{end}}')
-    echo "$WENV" | grep -q "^AGENTTEAMS_WORKER_NAME=$name$" || fail "CR spec.env 校验失败：$wc 缺 AGENTTEAMS_WORKER_NAME=$name"
-  else
-    fail "worker 容器不存在：$wc（置备后应由 ctrl reconcile 拉起——检查 ctrl 日志）"
+  CR=$(docker exec "$wc" sh -c 'cat /root/agentteams-fs/agents/'"$name"'/runtime/runtime.yaml 2>/dev/null' || true)
+  [ -n "$CR" ] || fail "CR 读取失败：$wc runtime/runtime.yaml 缺失"
+  echo "$CR" | grep -q "name: $name" || fail "CR 校验失败：$wc member.name 漂移"
+  echo "$CR" | grep -q "runtime: $QP_RUNTIME" || fail "CR 校验失败：$wc runtime 漂移（期望 $QP_RUNTIME）"
+  echo "$CR" | grep -q "model: $QP_WORKER_MODEL" || fail "CR 校验失败：$wc model 漂移（期望 $QP_WORKER_MODEL）"
+  CNT=$(docker inspect "$wc" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null || true)
+  [ -n "$CNT" ] || fail "worker 容器不可读：$wc"
+  echo "$CNT" | grep -q "^AGENTTEAMS_WORKER_NAME=$name$" || fail "容器 Config.Env 校验失败：$wc 缺 AGENTTEAMS_WORKER_NAME=$name"
+  if echo "$CNT" | grep -q '^AGENTTEAMS_MODEL='; then
+    echo "$CNT" | grep -q "^AGENTTEAMS_MODEL=$QP_WORKER_MODEL$" || fail "容器 Config.Env 校验失败：$wc AGENTTEAMS_MODEL 漂移"
   fi
+  log "CR 校验通过：$wc（runtime.yaml desired state + Config.Env 双证据一致）"
 done
-log "CR spec.env 实读校验通过（四 worker 容器身份在场）"
+log "CR 校验通过（API spec.env 投影 + 容器 Config.Env 身份/模型在场）"
 
-# ── 6. console 接线清单（出仓受控目录，0600，token 零回显）──
+# ── 7. Matrix 接线（console bot 幂等注册；凭据持久化不轮换）──
+MXPW=$(get_secret CONSOLE_BOT_PASSWORD)
+[ -n "$MXPW" ] || MXPW="console-bot-$(openssl rand -hex 12)"
+BOTUSER=$(get_secret CONSOLE_BOT_USER)
+[ -n "$BOTUSER" ] || BOTUSER="console-bot"
+REGTOK=$(get_secret QP_REGISTRATION_TOKEN)
+login_mx() { curl -s -m 8 -X POST "http://127.0.0.1:$QP_PORT_MATRIX/_matrix/client/v3/login" -H 'content-type: application/json' \
+  -d '{"type":"m.login.password","identifier":{"type":"m.id.user","user":"'"$1"'"},"password":"'"$2"'"}'; }
+LR=$(login_mx "$BOTUSER" "$MXPW")
+if echo "$LR" | grep -q '"user_id"'; then
+  log "console bot 已存在且登录通过（幂等复用）：$BOTUSER"
+else
+  RR=$(curl -s -m 8 -X POST "http://127.0.0.1:$QP_PORT_MATRIX/_matrix/client/v3/register" -H 'content-type: application/json' \
+    -d '{"username":"'"$BOTUSER"'","password":"'"$MXPW"'","auth":{"type":"m.login.registration_token","token":"'"$REGTOK"'"}}')
+  echo "$RR" | grep -q '"user_id"' || fail "console bot 注册失败：$(echo "$RR" | head -c 120)"
+  LR=$(login_mx "$BOTUSER" "$MXPW")
+  echo "$LR" | grep -q '"user_id"' || fail "console bot 注册后登录失败"
+  log "console bot 已注册并登录通过：$BOTUSER"
+fi
+put_secret CONSOLE_BOT_USER "$BOTUSER"
+put_secret CONSOLE_BOT_PASSWORD "$MXPW"
+
+# ── 8. console 接线清单（出仓 0600；MU_AGENTTEAMS_TOKEN=长效凭据 APITOK）──
+WIRE_FILE="$QP_SECRET_DIR/console-wire.env"
 umask 177
 cat > "$WIRE_FILE" <<EOF
-# console 执行器接线 env（生成于 $(date -u +%FT%TZ)；含稳定 API token=0600 勿入库）
+# console 执行器接线 env（生成于 $(date -u +%FT%TZ)；含凭据=0600 勿入库）
+# MU_AGENTTEAMS_TOKEN=$([ "$APITOK" = "$JWT" ] && echo "长效 SA JWT（跨 cli-token 轮换稳定）" || echo "现行 cli-token（约 5 分钟轮换——JWT 回退注记见安装日志）")
 MU_EXECUTOR=agentteams
 MU_AGENTTEAMS_BASE_URL=http://$QP_CTRL_NAME:8090
-MU_AGENTTEAMS_TOKEN=$TOK
-# ↑ cli-token 约 5 分钟轮换：console 长驻形态须走 at-auth-proxy（生产模式，长效 JWT）
-#   或在 401 时以新 cli-token 重启 console（隔离测试可接受）。MU_AGENTTEAMS_RUNTIME=$QP_RUNTIME
+MU_AGENTTEAMS_TOKEN=$APITOK
+MU_AGENTTEAMS_RUNTIME=$QP_RUNTIME
 MU_AGENTTEAMS_MODEL=$QP_WORKER_MODEL
 MU_AGENTTEAMS_MATRIX_URL=http://$QP_CTRL_NAME:6167
-# MU_AGENTTEAMS_MATRIX_USER/_PASSWORD：console 自有 Matrix 账号——用注册 token 注册后填入
-# 注册 token 在 $QP_SECRET_DIR/stack-secrets.env（QP_REGISTRATION_TOKEN）
+MU_AGENTTEAMS_MATRIX_USER=$BOTUSER
+MU_AGENTTEAMS_MATRIX_PASSWORD=$MXPW
 EOF
 umask 022
 log "console 接线清单已写 $WIRE_FILE（0600）"
 
-# ── 7. 健康验收（verify 失败=本入口失败；不打印安装完成）──
-get_secret() { f=$2; grep -m1 "^$1=" "$f" 2>/dev/null | cut -d= -f2- || true; }
-QP_ADMIN_PASSWORD="${QP_ADMIN_PASSWORD:-$(get_secret QP_ADMIN_PASSWORD /home/ngh/.qwp2-secrets.env)}"
+# ── 9. 健康验收（worker 就绪；team ID=任务创建后由调用方核对——分阶段验证）──
+get_secret() { grep -m1 "^$1=" "$QP_SECRET_FILE" 2>/dev/null | cut -d= -f2- | tr -d '\r\n' || true; }
+QP_ADMIN_PASSWORD="${QP_ADMIN_PASSWORD:-$(get_secret QP_ADMIN_PASSWORD)}"
 : "${QP_ADMIN_PASSWORD:?无法取得 QP_ADMIN_PASSWORD}"
 QP_CTRL_PORT="$QP_PORT_CTRL" QP_ADMIN_PASSWORD="$QP_ADMIN_PASSWORD" \
   QP_EXPECT_RUNTIME="$QP_RUNTIME" QP_EXPECT_MODEL="$QP_WORKER_MODEL" \
   bash "$HERE/verify-qwenpaw-v124.sh"
-log "安装完成：ctrl/manager/四 worker 就绪，健康验收通过"
+log "安装完成：ctrl/manager/四 worker 就绪，认证与 Matrix 接线收口，健康验收通过"

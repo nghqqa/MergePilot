@@ -1,4 +1,18 @@
 #!/bin/bash
+
+# ── 【版本线守卫（2026-10-24 波）】────────────────────────────────────────────
+# 本脚本属 223ddc2/copaw 旧线（worker runtime=copaw + deepseek-direct 绕过）。
+# 现役线 = QwenPaw v1.2.4（deploy/agentteams/qwenpaw-v124/MANIFEST-qwenpaw-v124.md，
+# 安装入口=同目录 apply-qwenpaw-v124.sh + install-agentteams-full.sh）：
+#   * v1.2.4 ctrl 下运行本脚本会以 runtime=copaw 建户=角色漂移（AT_WORKER_DRIFT 读回防线拒绝）；
+#   * v1.2.4 模型配置真源=Higress provider（runtime.yaml desired state），deepseek-direct 不适用。
+# 确需操作旧线栈：CONFIRM_LEGACY_223DDC2=1 显式确认后放行。
+if [ "${CONFIRM_LEGACY_223DDC2:-}" != "1" ]; then
+  echo "FAIL: 本脚本为 223ddc2/copaw 旧线专用；现役线=QwenPaw v1.2.4（见 deploy/agentteams/qwenpaw-v124/）。" >&2
+  echo "      确认目标是旧线栈时：CONFIRM_LEGACY_223DDC2=1 $0 ..." >&2
+  exit 3
+fi
+# ─────────────────────────────────────────────────────────────────────────────
 # provision-workers.sh — 四具名 Agent 的受控置备（AgentTeams Beta 部署清单固化）。
 # 流程（全部经真实 Controller API；凭据零落盘）：
 #  1. POST /api/v1/workers 创建 mergepilot-{leader,reviewer,fixer,verifier}
