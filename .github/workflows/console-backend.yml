@@ -109,6 +109,15 @@ jobs:
       - name: MU RBAC + tenant isolation integration (Phase 2/3, 59 scenarios)
         run: node console/backend/test/mu-rbac.integration.mjs
 
+      # MU 首管身份契约集成（#517 后续波，12 场景）：bootstrap→真实 HTTP OAuth 回调登录
+      # 同一管理员；fixture 关闭；跨 provider 同数字 id 隔离；重跑 bootstrap 不覆盖角色/
+      # 不复活撤销。退出语义：断言失败/意外异常/超时=1，清理失败=2，全过=0——异常必失败，
+      # 不得静默成功。Docker 不可用=硬失败（环境缺失禁止静默跳过）。
+      - name: MU bootstrap OAuth login integration (first-admin contract, 12 scenarios)
+        run: |
+          docker info >/dev/null 2>&1 || { echo 'FATAL: runner Docker unavailable - integration tests must not silently skip'; exit 1; }
+          node console/backend/test/mu-bootstrap-login.integration.mjs
+
       # RAG canonical 集成（Phase 0a F-6 补账）：自起一次性 pgvector 容器、随机回环
       # 端口、finally 强制清理——不连接/复用任何常驻栈；跑在既有 job 内，required
       # check 名称不变（main 保护零影响）
