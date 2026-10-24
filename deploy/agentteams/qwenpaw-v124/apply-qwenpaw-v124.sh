@@ -19,6 +19,7 @@ QP_ADMIN_USER="${QP_ADMIN_USER:-admin}"
 QP_SECRET_FILE="${QP_SECRET_FILE:-$HOME/.qwp2-secrets.env}"
 # FS 配置（controller 写对象存储的实际凭据面——2026-10-10 实测缺失即 replan 500）
 FS_BUCKET="${FS_BUCKET:-agentteams-storage}"
+QP_AUTH_TOKEN_FILE="${QP_AUTH_TOKEN_FILE:-/var/run/agentteams/cli-token}"
 
 # LLM 上游：env 优先；未提供时从秘密文件读（首轮由 apply 写入）
 : "${QP_LLM_BASE_URL:=$(grep -m1 '^QP_LLM_BASE_URL=' "$QP_SECRET_FILE" 2>/dev/null | cut -d= -f2- || true)}"
@@ -106,8 +107,11 @@ if docker ps -a --format '{{.Names}}' | grep -qx "$QP_CTRL_NAME"; then
   docker start "$QP_CTRL_NAME" >/dev/null 2>&1 || true
   log "已存在 controller 核对通过（镜像/卷/凭据一致）——复用"
 else
+  AUTH_TOKEN_ARGS=()
+  [ -n "${QP_API_TOKEN:-}" ] && AUTH_TOKEN_ARGS=(-e "AGENTTEAMS_AUTH_TOKEN=$QP_API_TOKEN")
   MSYS_NO_PATHCONV=1 docker run -d --name "$QP_CTRL_NAME" \
     --hostname "$QP_CTRL_NAME" --network "$QP_NETWORK" --restart no \
+    "${AUTH_TOKEN_ARGS[@]}" \
     -e AGENTTEAMS_CONTROLLER_URL="http://$QP_CTRL_NAME:8090" \
     -e AGENTTEAMS_DOCKER_NETWORK="$QP_NETWORK" \
     -e AGENTTEAMS_DATA_DIR=/data \
@@ -119,7 +123,7 @@ else
     -e AGENTTEAMS_AI_GATEWAY_URL="http://$QP_CTRL_NAME:8080" \
     -e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://$QP_CTRL_NAME:8001" \
     -e AGENTTEAMS_WORKER_IDLE_TIMEOUT=720 \
-    -e AGENTTEAMS_AUTH_TOKEN_FILE=/var/run/agentteams/cli-token \
+    -e AGENTTEAMS_AUTH_TOKEN_FILE="$QP_AUTH_TOKEN_FILE" \
     -e AGENTTEAMS_MATRIX_APPSERVICE_ENABLED=false \
     -e AGENTTEAMS_ADMIN_USER="$QP_ADMIN_USER" \
     -e AGENTTEAMS_ADMIN_PASSWORD="$QP_ADMIN_PASSWORD" \
@@ -229,9 +233,17 @@ else
   case "$CODE_R" in 200|201) log "AI route 创建（$CODE_R）";; *) fail "AI route 播种失败（$CODE_R）：$(head -c 150 /tmp/route-put.json 2>/dev/null)——契约 matchType=PRE 大写+matchValue";; esac
 fi
 
-# ── 6. 网关真实 LLM 探测（fail-closed） ──
-GW=$(docker exec "$QP_CTRL_NAME" sh -c 'curl -s -o /tmp/gwprobe.json -w "%{http_code}" -X POST http://127.0.0.1:8080/v1/chat/completions -H "content-type: application/json" -H "Authorization: Bearer probe" -d "{\"model\":\"'$QP_LLM_MODEL'\",\"messages\":[{\"role\":\"user\",\"content\":\"回答一个字：好\"}]}"')
-[ "$GW" = "200" ] || fail "网关 LLM 探测失败（HTTP $GW）——检查 provider/route/上游 key（docker exec $QP_CTRL_NAME cat /tmp/gwprobe.json 脱敏查看 errcode）"
+# ── 6. 网关真实 LLM 探测（fail-closed；文件化载荷防引号变形 + 重试覆盖 envoy 同步滞后）──
+# 2026-10-24 实证：route 创建后 envoy 配置传播有秒级滞后（一次性探测 404 假失败）；
+# 内联 JSON 经 sh -c 双层转义易变形（400）——载荷落文件 + --data-binary。
+docker exec "$QP_CTRL_NAME" sh -c 'printf "%s" "{\"model\":\"$0\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" > /tmp/gwprobe-req.json' "$QP_LLM_MODEL"
+GW=000
+for _try in $(seq 1 18); do
+  GW=$(docker exec "$QP_CTRL_NAME" sh -c 'curl -s -o /tmp/gwprobe.json -w "%{http_code}" -X POST http://127.0.0.1:8080/v1/chat/completions -H "content-type: application/json" -H "Authorization: Bearer probe" --data-binary @/tmp/gwprobe-req.json')
+  [ "$GW" = "200" ] && break
+  sleep 5
+done
+[ "$GW" = "200" ] || fail "网关 LLM 探测失败（HTTP $GW，重试 90s）——检查 provider/route/上游 key（docker exec $QP_CTRL_NAME cat /tmp/gwprobe.json 脱敏查看）"
 log "网关真实 LLM 探测 200（上游路由打通）"
 
 cat <<EOF
