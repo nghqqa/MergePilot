@@ -486,7 +486,8 @@ async function buildFixDepsForRepo(muPoolQuery, { tenantId, repoId, prNumber }) 
     if (!frozen || frozen.status === 'unknown') return null; // unknown/未记录→拒绝 dry-run
     const declared = Number.isInteger(frozen.declared_file_count) && frozen.declared_file_count >= 0
       ? frozen.declared_file_count : null;
-    const adapter = createGiteeAdapter({ env: process.env, credentialRef: 'env:MU_GITEE_PAT' });
+    const adapter = createGiteeAdapter({ env: process.env, credentialRef: 'env:MU_GITEE_PAT',
+      apiBase: String(process.env.MU_GITEE_API_BASE ?? '').trim() || undefined });
     const repoPath = `${rm.owner}/${rm.name}`;
     const overrides = global.__WAVE3_TEST_DEPS; // 测试注入本地仓库/定制 testCmd（与 GitHub 分支同机制）
     // 真实形态 repoUrl（试点缺陷修正：null→BAD_INPUT）：Gitee https clone URL。
