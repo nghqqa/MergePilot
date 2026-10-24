@@ -51,6 +51,16 @@ try {
   ok('MS2c bootstrap 身份映射（fixture provider，无任何 token 列）',
     (await store.getUserByIdentity('fixture', 'fixture:mu-admin'))?.user_id === b1.user.user_id);
 
+  // MS2d（2026-10-23 干净环境首装实证）：OAuth 前缀 subject 按真实 provider 落行——
+  // OAuth 身份键=(provider, subject=裸数字id)，fixture 死行会让生产模式首装管理员永远无法 OAuth 登录
+  const storeOauth = await createMuStore({ pool, env: { MU_BOOTSTRAP_ADMIN_LOGIN: 'mu-admin', MU_BOOTSTRAP_ADMIN_SUBJECT: 'github-oauth:150000001' } });
+  await storeOauth.bootstrap();
+  const oa = await store.getUserByIdentity('github-oauth', '150000001');
+  ok('MS2d bootstrap OAuth 前缀 subject → (github-oauth, 裸数字id) 身份行',
+    oa?.user_id === b1.user.user_id, oa);
+  ok('MS2d2 同用户 fixture 旧行不受影响（幂等共存）',
+    (await store.getUserByIdentity('fixture', 'fixture:mu-admin'))?.user_id === b1.user.user_id);
+
   // ── MS*：复合唯一与跨 tenant 隔离 ──
   const tA = await store.ensureTenant({ slug: `ten-a-${Date.now()}`, displayName: 'A' });
   const tB = await store.ensureTenant({ slug: `ten-b-${Date.now()}`, displayName: 'B' });
