@@ -83,6 +83,12 @@ const realProvider = {
 };
 
 let providerImpl = realProvider;
+/** 探测结果 → PR 行保护状态（纯函数；known_clean=探测确认受保护，其余如实 unknown——
+ *  fail-closed 语义：未确认受保护就不给出可合并结论。值域与 mu.pull_request 一致）。 */
+export function branchProtectionStatusFromProbe(protection) {
+  return protection?.configured === true ? 'known_clean' : 'unknown';
+}
+
 export function __setGhProviderForTests(impl) { providerImpl = impl; }
 export function __resetGhProvider() { providerImpl = realProvider; }
 export function fetchPrContext(cfg, args) { return providerImpl.fetchPrContext(cfg, args); }

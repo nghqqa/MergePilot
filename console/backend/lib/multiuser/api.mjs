@@ -251,6 +251,17 @@ async function executeEventSync(store, muPoolQuery, job, sysCtx) {
       const rv = await handlePullRequestEvent(pool, cfg, { payload: job.payload });
       pipeline.review = { ok: rv.ok, status: rv.run?.status ?? null,
         findings: rv.findings_count ?? null, reason: rv.reason ?? null };
+    // 保护探测结果回写 PR 行（rc8.1 修复：此前入场硬编码 unknown 且探测结果从不落库——
+    // UI 永远显示「保护状态未知」。known_clean=探测确认受保护；其余如实 unknown。
+    // 仅影响合并资格显示与结论；审查/审批/修复不受影响。）
+    if (rv.ok && rv.protection != null) {
+      const { branchProtectionStatusFromProbe } = await import('./ghprovider.mjs');
+      await muPoolQuery(
+        `UPDATE mu.pull_request SET branch_protection_status=$1, updated_at=now()
+          WHERE tenant_id=$2 AND repo_id=$3 AND provider_pr_number=$4 AND head_sha=$5`,
+        [branchProtectionStatusFromProbe(rv.protection), job.tenant_id, job.repo_id,
+         prNumber, headSha]).catch(() => {});
+    }
       if (rv.ok && rv.run?.status === 'REVIEWED' && !rv.idempotent) {
         const findings = (await muPoolQuery(
           `SELECT rule_id, severity, path, line_start, summary_masked FROM mu.agent_finding
@@ -331,6 +342,17 @@ async function executeEventSync(store, muPoolQuery, job, sysCtx) {
       pr_number: prNumber, head_sha: headSha } });
     pipeline.review = { ok: rv.ok, status: rv.run?.status ?? null,
       findings: rv.findings_count ?? null, reason: rv.reason ?? null };
+    // 保护探测结果回写 PR 行（rc8.1 修复：此前入场硬编码 unknown 且探测结果从不落库——
+    // UI 永远显示「保护状态未知」。known_clean=探测确认受保护；其余如实 unknown。
+    // 仅影响合并资格显示与结论；审查/审批/修复不受影响。）
+    if (rv.ok && rv.protection != null) {
+      const { branchProtectionStatusFromProbe } = await import('./ghprovider.mjs');
+      await muPoolQuery(
+        `UPDATE mu.pull_request SET branch_protection_status=$1, updated_at=now()
+          WHERE tenant_id=$2 AND repo_id=$3 AND provider_pr_number=$4 AND head_sha=$5`,
+        [branchProtectionStatusFromProbe(rv.protection), job.tenant_id, job.repo_id,
+         prNumber, headSha]).catch(() => {});
+    }
     if (rv.ok && rv.run?.status === 'REVIEWED' && !rv.idempotent) {
       const findings = (await muPoolQuery(
         `SELECT rule_id, severity, path, line_start, summary_masked FROM mu.agent_finding
