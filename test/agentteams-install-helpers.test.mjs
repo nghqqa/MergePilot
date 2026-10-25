@@ -37,6 +37,7 @@ test('api() 行为：占位 token 进 Authorization 头、不进 URL/输出（PO
   const script = [
     'export PATH=' + JSON.stringify(sandbox) + ':$PATH',
     'export CAPTURE=' + JSON.stringify(cap),
+    'export QP_PORT_CTRL=18290',
     'TOK=' + JSON.stringify(P),
     apiDef,
     'api /api/v1/workers',
