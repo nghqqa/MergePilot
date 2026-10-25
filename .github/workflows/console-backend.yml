@@ -80,6 +80,7 @@ jobs:
           docker info >/dev/null 2>&1 || { echo 'FATAL: runner Docker unavailable'; exit 1; }
           node --test test/agentteams-install-helpers.test.mjs
           node --test test/agentteams-install-entry.test.mjs
+          node --test test/agentteams-network-wiring.test.mjs
           node --test test/matrix-collect-reply.test.mjs
 
       # swap 工具单测（rc7 事故固化）：create→connect→rm→start 序列/多网络 IP 别名继承/

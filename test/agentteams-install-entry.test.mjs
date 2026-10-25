@@ -33,6 +33,23 @@ test('认证契约：发布端口 cli-token + 错误/无凭据负样本（不关
   assert.ok(!src.includes('AUTH_TOKEN_EXPIRATION'), '不得延长 token 有效期');
 });
 
+test('Matrix 接线：login_mx 定义先于调用（3fcaab4 丢定义事故回归锁）+ UIA 两步在场', () => {
+  const def = src.indexOf('login_mx()');
+  const use = src.indexOf('LR=$(login_mx ');
+  assert.ok(def > 0, 'login_mx 定义缺失（步骤 7 运行时必挂：command not found）');
+  assert.ok(use > def, `login_mx 定义(offset ${def})必须先于首次调用(offset ${use})`);
+  assert.ok(src.includes('m.login.registration_token'), '注册令牌路径（幂等注册回退）必须在场');
+});
+
+test('部署脚本语法：bash -n 全过（POSIX；CI ubuntu 执行）',
+  { skip: process.platform === 'win32' ? 'POSIX shell 语法检查——CI ubuntu 执行' : false }, () => {
+    const AT = path.join(HERE, '..', 'deploy', 'agentteams', 'qwenpaw-v124');
+    for (const f of ['install-agentteams-full.sh', 'apply-qwenpaw-v124.sh', 'verify-qwenpaw-v124.sh',
+      'wire-console-env.sh', 'test/run-fake-gitee.sh']) {
+      execFileSync('bash', ['-n', path.join(AT, f)]);
+    }
+  });
+
 test('失败退出码：缺必填 env → 非零退出且不打印安装完成', () => {
   const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'at-entry-test-'));
   // stub docker：一切调用成功退出（digest 核验通过）——脚本应死于缺 QP_LLM_API_KEY

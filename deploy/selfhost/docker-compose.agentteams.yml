@@ -1,0 +1,21 @@
+# console↔agentteams 执行器网络接线（声明化，2026-10-26 收口波）。
+#
+# 用途：仅当 console 以 agentteams 为执行器（MU_EXECUTOR=agentteams）时叠加本文件：
+#   docker compose -f docker-compose.yml -f docker-compose.agentteams.yml up -d console
+# 叠加后 console 同时接入 agentteams 执行器网络——compose 重建（--force-recreate）自动
+# 重连，不再需要手工 docker network connect（此前手工接线的漂移已在 2026-10-25 波实证）。
+#
+# 前置：执行器网络由 deploy/agentteams/qwenpaw-v124/apply-qwenpaw-v124.sh 创建
+# （QP_NETWORK，默认 qwp2-net；atiso 验收栈=atiso-net）；网络名经 MU_AGENTTEAMS_NETWORK
+# 注入本栈 .env（安装入口在设 MU_CONSOLE_ENV_FILE 时自动写入，见 wire-console-env.sh）。
+#
+# 边界：本文件只做网络声明；MU_AGENTTEAMS_* 认证/地址键仍由安装入口出仓的接线清单
+# （console-wire.env → 栈 .env）提供。隔离验收专用假服务不进任何 selfhost 配置——
+# 见 deploy/agentteams/qwenpaw-v124/test/（禁止混入生产配方）。
+services:
+  console:
+    networks: [internal, agentteams]
+networks:
+  agentteams:
+    external: true
+    name: ${MU_AGENTTEAMS_NETWORK:-agentteams-net}
