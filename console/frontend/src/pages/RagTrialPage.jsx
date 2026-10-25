@@ -3,6 +3,7 @@ import { ReloadOutlined, SearchOutlined, ThunderboltOutlined } from '@ant-design
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
 import { ragMap, toneToColor } from '../status-map.js';
+import { metricChipFor } from '../rag-metric-chip.js';
 
 // RAG 本地试验页（LOCAL_RAG_TRIAL）。数据 100% 来自 /api/rag-trial/*：
 // 六状态如实显示（hit/empty/model_missing/index_stale/provider_unavailable/
@@ -393,9 +394,10 @@ export default function RagTrialPage() {
       {metrics ? (
         <Card title="指标（PG 真实推导）" size="small" extra={<Button size="small" icon={<ReloadOutlined />} onClick={refresh}>刷新</Button>}>
           <Space size="large" wrap>
-            {Object.entries(metrics.queries_by_state ?? {}).map(([s, n]) => (
-              <span key={s}>{stateTag(s)} × {n}</span>
-            ))}
+            {Object.entries(metrics.queries_by_state ?? {}).map(([s, n]) => {
+              const chip = metricChipFor(s, n, metrics.queries_latest_by_state?.[s], metrics.latest_overall);
+              return <span key={s}><Tag color={toneToColor(chip.tone)} title={chip.note}>{chip.text}</Tag></span>;
+            })}
             <span>延迟 P50 {metrics.latency_ms?.p50} ms / P95 {metrics.latency_ms?.p95} ms</span>
             <span>命中 {metrics.citation?.hit_rows} 行 / 引用丢弃 {metrics.citation?.dropped_uncited_rows} 行</span>
           </Space>

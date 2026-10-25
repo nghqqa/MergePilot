@@ -654,6 +654,8 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
     const h = hits.rows[0];
     return {
       queries_by_state: Object.fromEntries(byState.rows.map((r) => [r.state, r.n])),
+      queries_latest_by_state: Object.fromEntries(latestByState.rows.map((r) => [r.state, r.latest])),
+      latest_overall: latestOverall.rows[0].latest,
       latency_ms: latency.rows[0],
       citation: {
         hit_rows: h.hit_rows, cited_rows: h.cited_rows, dropped_uncited_rows: h.dropped_uncited_rows,
