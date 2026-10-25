@@ -5,12 +5,17 @@
 #   1. 依赖初始化   三镜像 digest 核验
 #   2. 凭据目录     仓库外受控目录（0700 先于创建）
 #   3. ctrl/manager 就绪   apply（无 ctrl 时创建→健康等待→cli-token 落盘；token 读取只能在 ctrl 就绪后）
-#   4. 认证         读现行 cli-token → 铸长效 SA JWT（ctrl pki ES256）→ 三态自证（JWT 200/错 401/无 401）
-#                   → 后续一律用 JWT（跨 cli-token 轮换稳定；不关认证、不延有效期、不重启维持）
+#   4. 认证         读现行 cli-token 即读即用（cli-token=ctrl 引导期铸造的 10 年期 SA JWT，
+#                   ctrl pki ES256，sub=serviceaccount——本入口不自铸、不延有效期、不关认证）
+#                   → 三态自证（有效 200/错 401/无 401）
+#                   → 验证=ctrl pki 签名面（非文件比对）：ctrl 重启后既有 token 依旧有效
+#                     （pki 键持久于数据卷——2026-10-26 波实证），console 无需随 ctrl 重启刷新
 #   5. 四 worker 置备   union body 幂等；逐 worker JSON 读回校验（runtime/model）
 #   6. CR 校验      双证据：ctrl API worker spec.env + worker 容器 Config.Env（docker inspect）
 #   7. Matrix 接线   console bot 幂等注册（凭据持久化于栈秘密文件；密码不轮换则登录即复用）
-#   8. console 接线清单   出仓 0600（MU_AGENTTEAMS_TOKEN=长效 JWT——console 跨轮换免重启）
+#   8. console 接线   清单出仓 0600（MU_AGENTTEAMS_TOKEN=现行 cli-token）+ 设 MU_CONSOLE_ENV_FILE
+#                   时幂等合并进 console 栈 .env（含 MU_AGENTTEAMS_NETWORK=执行器网络名，
+#                   供 deploy/selfhost/docker-compose.agentteams.yml 叠加——重建免手工 network connect）
 #   9. 健康验收   verify（分阶段：安装期查 worker 就绪；team ID 在任务创建后由调用方核对）
 # 任何失败=非零退出且不打印安装完成。
 set -euo pipefail
@@ -84,12 +89,14 @@ if docker ps -a --format '{{.Names}}' | grep -qx "$QP_CTRL_NAME"; then
 fi
 bash "$HERE/apply-qwenpaw-v124.sh"
 
-# ── 4. 认证：宿主发布端口 + 现行 cli-token（实证契约，2026-10-25）──
+# ── 4. 认证：宿主发布端口 + 现行 cli-token（实证契约，2026-10-25；签名面定案 2026-10-26）──
 # 实证（两栈交叉对照）：同一 cli-token，容器内 loopback(127.0.0.1:8090)=401、
 # 发布端口/网络面(eth0)=200——controller 对 loopback 与网络面请求的鉴权路径不同；
 # 生产 at-auth-proxy→ctrl:8090 走网络面=恒 200（与本结论一致）。
-# cli-token 在 ctrl 进程生命周期内稳定（文件 mtime 数小时不变，非 5 分钟轮换）；
-# ctrl 重建后 token 更新 → 重跑本入口即刷新接线（幂等）。
+# cli-token=ctrl 引导期铸造的 10 年期 SA JWT（本入口只读用——不自铸、不延有效期、不关认证）；
+# 验证=ctrl pki 签名面（同 kid+数据卷持久键），非文件比对：ctrl 重启会自铸新 token 写盘，
+# 但既有 token 依旧有效——console 持安装期 token 跨 ctrl 重启全链 COMPLETED 实证（2026-10-26）。
+# ctrl 重建若更换 pki 键（新数据卷）→ 既有 token 失效 → 重跑本入口即刷新接线（幂等受支持路径）。
 TOK=$(docker exec "$QP_CTRL_NAME" sh -c 'tr -d "
 " < /var/run/agentteams/cli-token' 2>/dev/null | tr -d '
 ' || true)
@@ -195,11 +202,13 @@ LR=$(login_mx "$BOTUSER" "$MXPW")
 echo "$LR" | grep -q '"user_id"' || fail "Matrix 接线自证失败（admin 登录）——栈凭据漂移"
 log "Matrix 接线自证通过：$BOTUSER 登录成功（worker 房间预置成员）"
 
-# ── 8. console 接线清单（出仓 0600；MU_AGENTTEAMS_TOKEN=现行 cli-token，ctrl 进程生命周期内稳定；ctrl 重建后重跑本入口即刷新）──
+# ── 8. console 接线清单（出仓 0600；MU_AGENTTEAMS_TOKEN=现行 cli-token——ctrl 引导期铸造的
+#      10 年期 SA JWT；pki 签名面验证下跨 ctrl 重启有效；本入口不自铸、不延有效期）──
 WIRE_FILE="$QP_SECRET_DIR/console-wire.env"
 umask 177
 cat > "$WIRE_FILE" <<EOF
 # console 执行器接线 env（生成于 $(date -u +%FT%TZ)；含凭据=0600 勿入库）
+# 网络声明（compose 叠加用，不入容器）：MU_AGENTTEAMS_NETWORK=$QP_NETWORK
 MU_EXECUTOR=agentteams
 MU_AGENTTEAMS_BASE_URL=http://$QP_CTRL_NAME:8090
 MU_AGENTTEAMS_TOKEN=$TOK
@@ -211,6 +220,15 @@ MU_AGENTTEAMS_MATRIX_PASSWORD=$MXPW
 EOF
 umask 022
 log "console 接线清单已写 $WIRE_FILE（0600）"
+
+# ── 8b. console 栈 env 幂等合并（声明化接线 env 半边；网络半边=selfhost 叠加文件）──
+if [ -n "${MU_CONSOLE_ENV_FILE:-}" ]; then
+  bash "$HERE/wire-console-env.sh" "$WIRE_FILE" "$MU_CONSOLE_ENV_FILE" "MU_AGENTTEAMS_NETWORK=$QP_NETWORK"
+  log "console 栈 env 已幂等合并（$MU_CONSOLE_ENV_FILE，含 MU_AGENTTEAMS_NETWORK）"
+  log "console 重建命令（免手工 network connect）：docker compose -f docker-compose.yml -f docker-compose.agentteams.yml up -d console"
+else
+  log "未设 MU_CONSOLE_ENV_FILE——跳过栈 env 合并（接线清单已出仓，合并由调用方执行）"
+fi
 
 # ── 9. 健康验收（worker 就绪；team ID=任务创建后由调用方核对——分阶段验证）──
 get_secret() { grep -m1 "^$1=" "$QP_SECRET_FILE" 2>/dev/null | cut -d= -f2- | tr -d '\r\n' || true; }
