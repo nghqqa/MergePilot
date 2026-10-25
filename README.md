@@ -4,7 +4,7 @@
 
 [官网](https://docs.nghqqa.cn/) · [快速开始](https://docs.nghqqa.cn/quickstart.html) · [使用文档](https://docs.nghqqa.cn/docs.html) · [下载与校验](https://docs.nghqqa.cn/downloads.html)
 
-[![Release](https://img.shields.io/badge/Release-rc.35.5-0e6b62)](https://github.com/nghqqa/MergePilot/releases)
+[![Release](https://img.shields.io/badge/Release-rc.35.6--rc8-0e6b62)](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 MergePilot 接入你的仓库（GitHub App + Gitee 连接），把 PR 事件、审查发现（静态规则 +
@@ -12,8 +12,8 @@ LLM 第二阶段）、修复建议与验证证据汇集到你自己的 Console�
 「预览 → 确认」完成三类受控远端写：发布审查评论、**应用修复（机器人以自己的身份向 PR
 分支提交修复 commit，新 head 自动重审）**、**确认合并（统一资格门：当前 head 审查完成
 + 真实 CI 通过 + mergeable 已知，缺一不放行）**。系统不自动改代码、不自动合并、不设
-required check、不绕过平台保护。当前为 **Developer Beta（rc.35.5 口径）**，
-能力边界见[能力矩阵](docs/delivery/CAPABILITY-MATRIX.md)。
+required check、不绕过平台保护。当前为 **Developer Beta（rc.35.6-rc8 口径）**，
+能力边界见[能力矩阵](docs/delivery/CAPABILITY-MATRIX.md)。维护者生产实例已受控换版至该版本（真实浏览器 OAuth 登录验收与连续观察通过；auditor 等其余角色的登录验收尚未执行）。
 
 ## 界面
 
@@ -38,7 +38,7 @@ PR 事件接入 → 审查发现 → 按策略进入修复与验证 → Console 
 机器人提交与合并各自独立确认；Agent 的建议与可执行验证证据应分开看待。
 
 - **团队协作**：GitHub OAuth + 邀请制登录、五角色 RBAC、应用层多租户隔离与审计。
-- **修复验证**：AgentTeams 执行器独立部署；未配置或不就绪时，该环节 fail-closed。
+- **修复验证**：AgentTeams 执行器独立部署（`deploy/agentteams/qwenpaw-v124/install-agentteams-full.sh` 一键安装，console 侧经 `docker-compose.agentteams.yml` 声明式网络接线，重建免手工 connect）；未配置或不就绪时，该环节 fail-closed。
 - **可选知识库**：本地 RAG 检索团队规范，结果仅作为参考，不自动成为审查结论。
 
 ## 开始使用
@@ -46,7 +46,7 @@ PR 事件接入 → 审查发现 → 按策略进入修复与验证 → Console 
 Console、数据库和部署配置由你自行管理；官网是文档入口，**不是托管版 Console 或登录入口**。
 
 1. 阅读[快速开始](https://docs.nghqqa.cn/quickstart.html)，准备 Docker Compose、Node.js ≥ 20、GitHub App、OAuth App 和审查用的 LLM 端点。
-2. 选择 [rc.35.5 部署包](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.5)，或使用下面的仓库部署方式。离线镜像、SHA256SUMS、SBOM 和扫描记录见[下载与校验](https://docs.nghqqa.cn/downloads.html)。
+2. 选择 [rc.35.6-rc8 部署包](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8)（镜像 `ghcr.io/nghqqa/mergepilot-console@sha256:003d963347d400222c3b503cef0fe840452d20f1429db78f495e5585f9be3eea`；离线 tar、安装配方包、SHA256SUMS、SBOM 和扫描记录见该 Release 与[下载与校验](https://docs.nghqqa.cn/downloads.html)），或使用下面的仓库部署方式。
 3. 按[部署指南](deploy/selfhost/README.md)完成配置和首管理员初始化，再登录你自己的 Console。
 4. 日常使用与验收：[用户指南](docs/delivery/USER-GUIDE.md)（含受邀用户/自托管管理员两条首次使用路径）、[验收清单](docs/delivery/ACCEPTANCE-CHECKLIST.md)。
 
