@@ -25,7 +25,7 @@ jobs:
     name: console backend + frontend gate
     runs-on: ubuntu-latest
     # 溯源轮加固：合理超时（全套实测 ~1.5min，留 10x 余量）+ 并发去重（同 ref 只保留最新运行）
-    timeout-minutes: 15
+    timeout-minutes: 25  # 门步骤累积（docker services+341 测试+新增行为回归步骤）实测已逼近 15 分钟——放宽到 25
     concurrency:
       group: console-backend-${{ github.ref }}
       cancel-in-progress: true
