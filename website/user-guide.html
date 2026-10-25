@@ -64,7 +64,7 @@
 <h1>首次使用</h1>
 <p>管理员已部署实例并邀请你？从下面的登录步骤开始。要搭建自己的实例，先读
 <a href="quickstart.html">部署快速开始</a>。官网是静态文档站；实际登录和操作都在管理员提供的 Console 地址完成。</p>
-<div class="note">版本范围：以下说明 rc.35.6-rc7（预发布候选，源码 <code>b7a0fca</code>）的受控审修流程；
+<div class="note">版本范围：以下说明 rc.35.6-rc8（预发布候选，源码 <code>a50f034b</code>）的受控审修流程；
 其发布之后合入 main 的修正尚未随官方镜像发布，见
 <a href="downloads.html#release-scope">发布与源码范围</a>。页面措辞请结合实例版本核对。</div>
 
@@ -139,15 +139,15 @@ CI 待完成、失败、未知或读取不支持时也不放行。Gitee 当前�
 <dl>
 <dt><strong>远端 head 读取失败或无法核实</strong></dt>
 <dd>不能据此认定 head 已变化或一致。请管理员检查机器人凭据、安装权限与连接状态后重新预览。
-rc.35.6-rc7 已区分「匹配 / 已变化 / 无法核实」；旧版界面若误显示「已变化」，应结合预览错误原因核对。</dd>
+rc.35.6-rc8 已区分「匹配 / 已变化 / 无法核实」；旧版界面若误显示「已变化」，应结合预览错误原因核对。</dd>
 <dt><strong><code>BLOCKED</code> 且 <code>no_repair_pending</code></strong></dt>
 <dd>先看审批票和执行记录的实际原因；已拒绝、过期或失效的票不能重批。
 需要重新进入修复流程时，修正代码并推送新 commit，产生新 head 后重新审查。
 同 head 重复触发会复用既有 run；新 head 也只有再次产生 P0/P1 时才会生成相应审批票。
-rc.35.6-rc7 已补充按状态与实际记录区分的恢复提示。</dd>
+rc.35.6-rc8 已补充按状态与实际记录区分的恢复提示。</dd>
 <dt><strong>「待审批票」为空，但总览仍有已阻断 PR</strong></dt>
 <dd>待审批票只统计 PENDING 票，不能覆盖所有失败或卡住的执行；到总览查看已阻断记录。
-rc.35.6-rc7 已统一相关计数与空态口径；旧版可能仍使用「待处理」措辞。</dd>
+rc.35.6-rc8 已统一相关计数与空态口径；旧版可能仍使用「待处理」措辞。</dd>
 <dt><strong><code>result_uncertain</code>：远端写入结果不明</strong></dt>
 <dd>在历史操作中先点「读回对账」。有证据时才定案；证据不足会保持不确定。
 不要盲目重复提交或合并，刷新、重启也不会代替对账。
@@ -161,6 +161,6 @@ rc.35.6-rc7 已统一相关计数与空态口径；旧版可能仍使用「待�
 部署与版本选择见<a href="quickstart.html">快速开始</a>和<a href="downloads.html#release-scope">发布范围</a>。</p>
 </article>
 </main>
-<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.6-rc7（预发布） · Apache-2.0</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.6-rc8（预发布） · Apache-2.0</footer>
 </body>
 </html>
