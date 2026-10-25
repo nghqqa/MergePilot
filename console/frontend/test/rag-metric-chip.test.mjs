@@ -51,4 +51,12 @@ test('接线契约：页面走 metricChipFor；store metrics 暴露最近时间�
   const store = fs.readFileSync(path.join(FRONTEND, '..', 'backend', 'lib', 'ragtrial', 'store.mjs'), 'utf8');
   assert.ok(store.includes('queries_latest_by_state'), 'store 必须暴露各状态最近发生时间');
   assert.ok(store.includes('latest_overall'), 'store 必须暴露整体最近事件');
+  // 回归（rc8.3）：metrics() 体内必须先定义后引用 latestByState——上一次逐行补丁
+  // 断言中断导致定义缺失、metrics 500、页面误报「服务暂不可用」。
+  const mStart = store.indexOf('async function metrics');
+  const mBody = store.slice(mStart, mStart + 2600);
+  const defAt = mBody.indexOf('const latestByState = await q(');
+  const useAt = mBody.indexOf('latestByState.rows');
+  assert.ok(defAt > -1 && useAt > defAt, 'metrics() 必须定义 latestByState 且先于引用');
+  assert.ok(mBody.includes('const latestOverall = await q('), 'latestOverall 定义必须在场');
 });
