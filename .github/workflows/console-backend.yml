@@ -25,7 +25,7 @@ jobs:
     name: console backend + frontend gate
     runs-on: ubuntu-latest
     # 溯源轮加固：合理超时（全套实测 ~1.5min，留 10x 余量）+ 并发去重（同 ref 只保留最新运行）
-    timeout-minutes: 15
+    timeout-minutes: 25  # 门步骤累积（docker services+341 测试+新增行为回归步骤）实测已逼近 15 分钟——放宽到 25
     concurrency:
       group: console-backend-${{ github.ref }}
       cancel-in-progress: true
@@ -72,6 +72,15 @@ jobs:
 
       - name: Backend unit + contract suites (env-skips preserved, reasons in header)
         run: node --test console/backend/test/*.test.mjs
+
+      # agentteams 安装器/收集器行为回归（#519 续波）：collectReply 分页+筛选阶段
+      # （stub 合成时间线）与安装入口结构/失败退出码契约——异常必失败，不静默跳过
+      - name: AgentTeams installer & collectReply behavior regression
+        run: |
+          docker info >/dev/null 2>&1 || { echo 'FATAL: runner Docker unavailable'; exit 1; }
+          node --test test/agentteams-install-helpers.test.mjs
+          node --test test/agentteams-install-entry.test.mjs
+          node --test test/matrix-collect-reply.test.mjs
 
       # swap 工具单测（rc7 事故固化）：create→connect→rm→start 序列/多网络 IP 别名继承/
       # 逐阶段失败恢复与回滚网络恢复——此前该测试不在任何 CI glob 内（缺口收口）

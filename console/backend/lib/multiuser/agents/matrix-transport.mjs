@@ -189,34 +189,79 @@ export function extractReplyJson(text) {
 
 /**
  * 收集一个任务的 worker 回复（四重绑定：room 固定/sender 精确/ts 时间窗/marker）。
- * 轮询至超时；忽略一切不满足绑定的消息。返回 {ok, json, raw, ts} 或 {ok:false, reason}。
+ * 轮询至超时；每轮读取带分页（dir=b 从最新往旧，页数预算 MAX_COLLECT_PAGES，
+ * 全程受 deadline 约束）；忽略一切不满足绑定的消息。
+ * 诊断：AT_COLLECT_DIAG=1 时逐轮输出一行摘要（计数/时间范围/游标；零 token/URL/正文）。
+ * 返回 {ok, json, raw, ts} 或 {ok:false, reason}。
  */
 export async function collectReply(cfg, { room, expectedSender, marker, sinceTs,
-  timeoutMs = MT_LIMITS.defaultRoleTimeoutMs, fetchImpl: fetchImpl0 = fetch, sleepImpl = (ms) => new Promise((r) => setTimeout(r, ms)),
-  tsNow = Date.now }) {
+  timeoutMs = MT_LIMITS.defaultRoleTimeoutMs, fetchImpl: fetchImpl0 = fetch, sleepImpl = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   const fetchImpl = withTimeout(fetchImpl0, 'READ');
-  const deadline = tsNow() + timeoutMs;
+  // deadline 取真实墙钟：timeoutMs 是真实时间预算；不用可注入时钟——注入常量钟会让 for(;;) 永不超时（死循环）。
+  const startMs = Date.now();
+  const diagOn = String(process.env.AT_COLLECT_DIAG ?? '') === '1';
+  const diag = (s) => { if (diagOn) console.log(`[mt-collect] ${JSON.stringify({ marker_prefix_len: marker.length, ...s })}`); };
+  let polls = 0;
   for (;;) {
     const lg = await matrixLogin(cfg, fetchImpl0); // 原始实现——内部自包 LOGIN 超时
     if (!lg.ok) return lg;
     try {
-      const r = await fetchImpl(`${cfg.baseUrl}/_matrix/client/v3/rooms/${encodeURIComponent(room)}/messages?dir=b&limit=20&access_token=${lg.token}`);
-      if (!r.ok) return { ok: false, reason: `MT_READ_HTTP_${r.status}` };
-      const j = await r.json().catch(() => null);
-      const chunk = j?.chunk ?? [];
-      // 时间序（旧→新），取第一条满足全部绑定的回复
-      const candidates = chunk.filter((e) => e?.type === 'm.room.message'
-        && String(e.sender ?? '') === String(expectedSender)
-        && Number(e.origin_server_ts ?? 0) > Number(sinceTs)
-        && String(e.content?.body ?? '').includes(marker)).reverse();
-      for (const e of candidates) {
-        const body = String(e.content?.body ?? '');
-        const json = extractReplyJson(body);
-        if (json) return { ok: true, json, raw: body.slice(0, MT_LIMITS.maxBodyChars), ts: e.origin_server_ts };
-        // marker 在但无 JSON → 继续（worker 可能分多条；窗口内等下一条）
+      // 分页读取：dir=b 最新→往旧；页数预算 MAX_COLLECT_PAGES，超过即停（漏收留给下轮轮询）
+      let from = '';
+      let page = 0;
+      const st = { polls, pages: 0, seen: 0, typeOk: 0, senderOk: 0, tsOk: 0, markerOk: 0, jsonOk: 0, newestTs: 0, oldestTs: 0, cursor: false };
+      let accepted = null;
+      while (page < 3) {
+        const url = `${cfg.baseUrl}/_matrix/client/v3/rooms/${encodeURIComponent(room)}/messages?dir=b&limit=20`
+          + (from ? `&from=${encodeURIComponent(from)}` : '') + `&access_token=${lg.token}`;
+        const r = await fetchImpl(url);
+        if (!r.ok) return { ok: false, reason: `MT_READ_HTTP_${r.status}` };
+        const j = await r.json().catch(() => null);
+        const chunk = j?.chunk ?? [];
+        page++; st.pages = page;
+        if (chunk.length) {
+          st.newestTs = st.newestTs || Number(chunk[0]?.origin_server_ts ?? 0);
+          st.oldestTs = Number(chunk[chunk.length - 1]?.origin_server_ts ?? 0) || st.oldestTs;
+        }
+        st.cursor = Boolean(j?.next_batch);
+        // 时间序（旧→新），取第一条满足全部绑定的回复
+        const candidates = chunk.filter((e) => {
+          st.seen++;
+          if (e?.type !== 'm.room.message') return false;
+          st.typeOk++;
+          if (String(e.sender ?? '') !== String(expectedSender)) return false;
+          st.senderOk++;
+          if (!(Number(e.origin_server_ts ?? 0) > Number(sinceTs))) return false;
+          st.tsOk++;
+          if (!String(e.content?.body ?? '').includes(marker)) return false;
+          st.markerOk++;
+          return true;
+        }).reverse();
+        for (const e of candidates) {
+          const body = String(e.content?.body ?? '');
+          const json = extractReplyJson(body);
+          if (json) {
+            st.jsonOk++;
+            accepted = { ok: true, json, raw: body.slice(0, MT_LIMITS.maxBodyChars), ts: e.origin_server_ts };
+            break;
+          }
+          // marker 在但无 JSON → 继续（worker 可能分多条；窗口内等下一条）
+        }
+        if (accepted) break;
+        from = j?.next_batch ?? '';
+        if (!from || !chunk.length) break;
       }
+      if (accepted) {
+        diag({ done: 'accepted', ...st });
+        return accepted;
+      }
+      polls++;
+      if (diagOn) diag({ poll: polls, ...st, deadline_passed: (Date.now() - startMs) >= timeoutMs });
     } catch (e) { return { ok: false, reason: e?.code === 'MT_REQ_TIMEOUT' ? 'MT_READ_TIMEOUT' : 'MT_READ_UNREACHABLE' }; }
-    if (tsNow() > deadline) return { ok: false, reason: 'MT_REPLY_TIMEOUT' };
+    if (Date.now() - startMs >= timeoutMs) {
+      diag({ done: 'MT_REPLY_TIMEOUT', polls });
+      return { ok: false, reason: 'MT_REPLY_TIMEOUT' };
+    }
     await sleepImpl(MT_LIMITS.replyPollMs);
   }
 }
