@@ -195,10 +195,10 @@ export function extractReplyJson(text) {
  * 返回 {ok, json, raw, ts} 或 {ok:false, reason}。
  */
 export async function collectReply(cfg, { room, expectedSender, marker, sinceTs,
-  timeoutMs = MT_LIMITS.defaultRoleTimeoutMs, fetchImpl: fetchImpl0 = fetch, sleepImpl = (ms) => new Promise((r) => setTimeout(r, ms)),
-  tsNow = Date.now }) {
+  timeoutMs = MT_LIMITS.defaultRoleTimeoutMs, fetchImpl: fetchImpl0 = fetch, sleepImpl = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   const fetchImpl = withTimeout(fetchImpl0, 'READ');
-  const deadline = tsNow() + timeoutMs;
+  // deadline 取真实墙钟：timeoutMs 是真实时间预算；不用可注入时钟——注入常量钟会让 for(;;) 永不超时（死循环）。
+  const startMs = Date.now();
   const diagOn = String(process.env.AT_COLLECT_DIAG ?? '') === '1';
   const diag = (s) => { if (diagOn) console.log(`[mt-collect] ${JSON.stringify({ marker_prefix_len: marker.length, ...s })}`); };
   let polls = 0;
@@ -256,9 +256,9 @@ export async function collectReply(cfg, { room, expectedSender, marker, sinceTs,
         return accepted;
       }
       polls++;
-      if (diagOn) diag({ poll: polls, ...st, deadline_passed: tsNow() > deadline });
+      if (diagOn) diag({ poll: polls, ...st, deadline_passed: (Date.now() - startMs) >= timeoutMs });
     } catch (e) { return { ok: false, reason: e?.code === 'MT_REQ_TIMEOUT' ? 'MT_READ_TIMEOUT' : 'MT_READ_UNREACHABLE' }; }
-    if (tsNow() > deadline) {
+    if (Date.now() - startMs >= timeoutMs) {
       diag({ done: 'MT_REPLY_TIMEOUT', polls });
       return { ok: false, reason: 'MT_REPLY_TIMEOUT' };
     }

@@ -43,7 +43,10 @@ function mkFetch(ev, capture) {
     return { ok: false, status: 404, json: async () => ({}) };
   };
 }
+// deadline 语义：collectReply 用真实墙钟计 timeoutMs（生产契约=真实时间预算）。
+// 测试注入 10ms 步进 sleep——超时场景以真实时间有界返回（1~2s），不热旋转、不依赖注入时钟。
 const noSleep = async () => {};
+const pace = (ms) => new Promise((r) => setTimeout(r, 10));
 const T0 = 1_700_000_000_000;
 
 test('合法回复位于第二页（前 20 条为后续消息）→ 被接受', async () => {
@@ -54,7 +57,7 @@ test('合法回复位于第二页（前 20 条为后续消息）→ 被接受', 
   });
   const got = await collectReply(CFG, {
     room: '!r:mx.test', expectedSender: SENDER, marker: MARKER, sinceTs: T0,
-    timeoutMs: 5_000, fetchImpl: mkFetch(ev), sleepImpl: noSleep, tsNow: () => T0 + 300,
+    timeoutMs: 5_000, fetchImpl: mkFetch(ev), sleepImpl: noSleep,
   });
   assert.equal(got.ok, true, '第二页回复必须被接受');
   assert.equal(got.json.verdict, 'PASS');
@@ -68,7 +71,7 @@ test('超过页预算的后续消息（回复被挤出有界预算）→ 有界�
   const t0 = Date.now();
   const got = await collectReply(CFG, {
     room: '!r:mx.test', expectedSender: SENDER, marker: MARKER, sinceTs: T0,
-    timeoutMs: 2_000, fetchImpl: mkFetch(ev), sleepImpl: noSleep, tsNow: () => T0 + 300,
+    timeoutMs: 2_000, fetchImpl: mkFetch(ev), sleepImpl: pace,
   });
   assert.equal(got.ok, false);
   assert.equal(got.reason, 'MT_REPLY_TIMEOUT');
@@ -82,7 +85,7 @@ test('错误 sender 与错误 marker 的带 marker 消息被拒绝 → 继续轮
   });
   const got = await collectReply(CFG, {
     room: '!r:mx.test', expectedSender: SENDER, marker: MARKER, sinceTs: T0,
-    timeoutMs: 1_000, fetchImpl: mkFetch(ev), sleepImpl: noSleep, tsNow: () => T0 + 150,
+    timeoutMs: 1_000, fetchImpl: mkFetch(ev), sleepImpl: pace,
   });
   assert.equal(got.ok, false);
   assert.equal(got.reason, 'MT_REPLY_TIMEOUT');
@@ -95,7 +98,7 @@ test('跨轮次隔离：旧轮次回复（旧 submissionId）不得满足新轮�
   });
   const got = await collectReply(CFG, {
     room: '!r:mx.test', expectedSender: SENDER, marker: '[mp:SUB-R2]', sinceTs: T0,
-    timeoutMs: 2_000, fetchImpl: mkFetch(ev), sleepImpl: noSleep, tsNow: () => T0 + 300,
+    timeoutMs: 2_000, fetchImpl: mkFetch(ev), sleepImpl: noSleep,
   });
   assert.equal(got.ok, true);
   assert.equal(got.json.note, 'new round', '必须接受新轮次的回复而非旧轮次');
@@ -107,7 +110,7 @@ test('无合法回复 → MT_REPLY_TIMEOUT（fail-closed 语义保留）', async
   });
   const got = await collectReply(CFG, {
     room: '!r:mx.test', expectedSender: SENDER, marker: MARKER, sinceTs: T0,
-    timeoutMs: 1_000, fetchImpl: mkFetch(ev), sleepImpl: noSleep, tsNow: () => T0 + 300,
+    timeoutMs: 1_000, fetchImpl: mkFetch(ev), sleepImpl: pace,
   });
   assert.equal(got.ok, false);
   assert.equal(got.reason, 'MT_REPLY_TIMEOUT');
@@ -124,7 +127,7 @@ test('诊断开关：AT_COLLECT_DIAG=1 输出有界摘要（无 token/无 URL/�
     process.env.AT_COLLECT_DIAG = '1';
     await collectReply(CFG, {
       room: '!r:mx.test', expectedSender: SENDER, marker: MARKER, sinceTs: T0,
-      timeoutMs: 2_000, fetchImpl: mkFetch(ev), sleepImpl: noSleep, tsNow: () => T0 + 300,
+      timeoutMs: 2_000, fetchImpl: mkFetch(ev), sleepImpl: noSleep,
     });
   } finally {
     delete process.env.AT_COLLECT_DIAG;
