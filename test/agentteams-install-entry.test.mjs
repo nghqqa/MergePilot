@@ -26,8 +26,9 @@ test('已弃用假设：不得回归静态 token-file 注入/误重建守卫', (
   assert.ok(!/grep -c '\^AGENTTEAMS_AUTH_TOKEN_FILE'/.test(src), '不得以 token-file env 触发误重建');
 });
 
-test('认证契约：SA JWT 铸造+三态自证在场（不关认证/不延有效期）', () => {
-  assert.ok(src.includes('mint-sa-token.sh'), 'SA JWT 铸造调用缺失');
+test('认证契约：发布端口 cli-token + 错误/无凭据负样本（不关认证/不延有效期）', () => {
+  assert.ok(src.includes('Authorization: Bearer $TOK'), 'api 助手必须携带 Bearer 认证头');
+  assert.ok(src.includes('$QP_PORT_CTRL'), '必须走发布端口（网络面——loopback 鉴权分叉实证）');
   assert.ok(src.includes('at-iso-wrong-credential'), '错误凭据负样本缺失');
   assert.ok(!src.includes('AUTH_TOKEN_EXPIRATION'), '不得延长 token 有效期');
 });

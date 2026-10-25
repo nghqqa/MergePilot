@@ -73,6 +73,15 @@ jobs:
       - name: Backend unit + contract suites (env-skips preserved, reasons in header)
         run: node --test console/backend/test/*.test.mjs
 
+      # agentteams 安装器/收集器行为回归（#519 续波）：collectReply 分页+筛选阶段
+      # （stub 合成时间线）与安装入口结构/失败退出码契约——异常必失败，不静默跳过
+      - name: AgentTeams installer & collectReply behavior regression
+        run: |
+          docker info >/dev/null 2>&1 || { echo 'FATAL: runner Docker unavailable'; exit 1; }
+          node --test test/agentteams-install-helpers.test.mjs
+          node --test test/agentteams-install-entry.test.mjs
+          node --test test/matrix-collect-reply.test.mjs
+
       # swap 工具单测（rc7 事故固化）：create→connect→rm→start 序列/多网络 IP 别名继承/
       # 逐阶段失败恢复与回滚网络恢复——此前该测试不在任何 CI glob 内（缺口收口）
       - name: Swap tool unit tests (multi-network start order + failure rollback)
