@@ -198,9 +198,21 @@ log "CR 校验通过（API spec.env 投影 + 容器 Config.Env 身份/模型在�
 MXPW=$(get_secret QP_ADMIN_PASSWORD)
 BOTUSER=$(get_secret AGENTTEAMS_ADMIN_USER)
 [ -n "$BOTUSER" ] || BOTUSER="admin"
+# 定义须先于调用（3fcaab4 曾丢定义致步骤 7 必挂——回归由 entry 测试锁定）
+login_mx() { curl -s -m 8 -X POST "http://127.0.0.1:$QP_PORT_MATRIX/_matrix/client/v3/login" -H 'content-type: application/json' \
+  -d '{"type":"m.login.password","identifier":{"type":"m.id.user","user":"'"$1"'"},"password":"'"$2"'"}'; }
 LR=$(login_mx "$BOTUSER" "$MXPW")
-echo "$LR" | grep -q '"user_id"' || fail "Matrix 接线自证失败（admin 登录）——栈凭据漂移"
-log "Matrix 接线自证通过：$BOTUSER 登录成功（worker 房间预置成员）"
+if echo "$LR" | grep -q '"user_id"'; then
+  log "console bot 已存在且登录通过（幂等复用）：$BOTUSER"
+else
+  REGTOK=$(get_secret QP_REGISTRATION_TOKEN)
+  RR=$(curl -s -m 8 -X POST "http://127.0.0.1:$QP_PORT_MATRIX/_matrix/client/v3/register" -H 'content-type: application/json' \
+    -d '{"username":"'"$BOTUSER"'","password":"'"$MXPW"'","auth":{"type":"m.login.registration_token","token":"'"$REGTOK"'"}}')
+  echo "$RR" | grep -q '"user_id"' || fail "console bot 注册失败：$(echo "$RR" | head -c 120)"
+  LR=$(login_mx "$BOTUSER" "$MXPW")
+  echo "$LR" | grep -q '"user_id"' || fail "console bot 注册后登录失败"
+  log "console bot 已注册并登录通过：$BOTUSER"
+fi
 
 # ── 8. console 接线清单（出仓 0600；MU_AGENTTEAMS_TOKEN=现行 cli-token——ctrl 引导期铸造的
 #      10 年期 SA JWT；pki 签名面验证下跨 ctrl 重启有效；本入口不自铸、不延有效期）──
