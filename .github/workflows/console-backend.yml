@@ -325,6 +325,12 @@ jobs:
         run: node --test test/rag-run-references.smoke.test.mjs
         working-directory: console/frontend
 
+      # RAG 指标徽章诚实呈现（rc8.2）：错误态累计计数在「此后已有成功检索」时
+      # 必须以历史中性呈现并标注最近发生时间——不得把三周前的失败渲染成当前故障
+      - name: Frontend rag metric chip honesty (5 scenarios)
+        run: node --test test/rag-metric-chip.test.mjs
+        working-directory: console/frontend
+
       # ADR-002 PR F 前端冒烟：审查架构面板（三档/consent 门/出站披露）+
       # PR 详情四分立判定上屏（互不冒充）
       - name: Frontend review-arch smoke (PR F, 3 scenarios)
