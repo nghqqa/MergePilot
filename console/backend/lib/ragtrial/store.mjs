@@ -636,6 +636,13 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
   async function metrics() {
     const byState = await q(
       `SELECT state, count(*)::int n FROM ragtrial.query_log GROUP BY state`);
+    // rc8.2：各状态最近发生时间+整体最近事件——错误态徽章据其区分「历史」与「当前」
+    //（全期累计计数单独呈现会误导为当前故障，2026-10-25 实录；rc8.3 补：定义缺失回归——
+    //  上一次逐行补丁断言中断导致引用了未定义变量，metrics 500，页面误报服务不可用）。
+    const latestByState = await q(
+      `SELECT state, max(created_at) latest FROM ragtrial.query_log GROUP BY state`);
+    const latestOverall = await q(
+      `SELECT coalesce(max(created_at), now()) latest FROM ragtrial.query_log`);
     const latency = await q(
       `SELECT coalesce(percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms),0)::int p50,
               coalesce(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms),0)::int p95
