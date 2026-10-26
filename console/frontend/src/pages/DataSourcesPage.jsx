@@ -19,6 +19,7 @@ export default function DataSourcesPage() {
     <div>
       <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>数据源与联调</Typography.Title>
       <Typography.Paragraph type="secondary">
+          本页为只读状态总览——接入与配置操作在「组织与成员权限」页的接入清单中进行。
             当前数据从哪来、能做什么、哪些能力还在等待后端。术语的完整定义见下方说明。
           </Typography.Paragraph>
 

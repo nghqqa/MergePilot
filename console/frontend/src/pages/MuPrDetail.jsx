@@ -27,7 +27,7 @@ export function MuPrDetail() {
 
   return (
     <div>
-      <div className="breadcrumb"><Link className="crumb-back" to="/multiuser">返回组织与接入</Link></div>
+      <div className="breadcrumb"><Link className="crumb-back" to="/multiuser">返回组织与成员权限</Link></div>
       <MuPrDetailContent prRef={repoId ? { repoId, owner, name, prNumber } : null} />
     </div>
   );

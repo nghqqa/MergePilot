@@ -40,7 +40,7 @@ export function deriveIdentitySource({ session, dataMode, authed } = {}) {
     return { key: 'operator_password', label: '操作员账号密码登录', realGithubIdentity: false };
   }
   // 已登录但无显式 provider 标记——旧会话或契约缺口：如实显示未知，不冒充
-  return { key: 'unknown', label: '登录来源未知', realGithubIdentity: false };
+  return { key: 'unknown', label: '本机会话（登录方式以服务端配置为准）', realGithubIdentity: false };
 }
 
 // 侧栏 footer / 设置 / 诊断共用的一行能力边界（provider 感知）
@@ -57,7 +57,7 @@ export function capabilityLine(identity) {
     case 'anonymous':
       return '未认证 · 只读快照 · 无凭证下发';
     default:
-      return `登录来源未知 · ${CAPABILITY_LINE}`;
+      return `本机部署 · ${CAPABILITY_LINE}`;
   }
 }
 
@@ -75,6 +75,6 @@ export function identityDetail(identity, userName) {
     case 'anonymous':
       return '未认证——无真实 GitHub 身份';
     default:
-      return `${userName ?? '已登录'}（已登录，会话未携带 provider 标记——来源未知，不冒充 GitHub 身份）`;
+      return `${userName ?? '已登录'}（本机会话——登录方式以服务端 providers 配置为准；多用户部署属预期，无需处理）`;
   }
 }

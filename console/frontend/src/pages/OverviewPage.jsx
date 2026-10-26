@@ -304,7 +304,7 @@ export default function OverviewPage() {
   if (auth.status !== 'authed') {
     return (
       <div>
-        <Typography.Title level={1} style={{ fontSize: 24 }}>审查工作台</Typography.Title>
+        <Typography.Title level={1} style={{ fontSize: 24 }}>总览</Typography.Title>
         <Alert type="warning" showIcon message="需要登录"
           description="工作台数据受服务端会话与仓库 allowlist 保护（未认证返回 401）。"
           action={<Button type="primary" size="small" onClick={() => navigate('/multiuser')}>前往登录</Button>} />
@@ -542,6 +542,16 @@ export default function OverviewPage() {
         </p>
         {/* 桌面表格（>768px） */}
         <div className="wb-desktop-only">
+          {filtered.length === 0 && focus === "all" ? (
+            <div role="note" style={{ border: "1px solid #d9e6f2", background: "#f0f7ff", borderRadius: 8, padding: "12px 16px", marginBottom: 12 }}>
+              <strong>还没有审查记录——通常是因为还没有接入仓库。</strong>
+              <div style={{ marginTop: 6 }}>
+                下一步：1) 在 <Link to="/datasources">数据源</Link> 确认平台连接；
+                2) 在 <Link to="/multiuser">组织与成员权限</Link> 完成「安装 GitHub App → 绑定仓库」；
+                3) 之后推送 PR 即自动产生审查记录。
+              </div>
+            </div>
+          ) : null}
           <Table
             size="small" rowKey={(e) => e.key}
             pagination={{
@@ -733,7 +743,7 @@ export default function OverviewPage() {
           <Typography.Title level={3}>各阶段 PR</Typography.Title>
           <div className="ov-chart-box">
             {stageData.length === 0 ? (
-              <div className="ov-chart-empty" role="status">没有阶段数据（{data.source}——不渲染空轴冒充）</div>
+              <div className="ov-chart-empty" role="status">没有阶段数据（当前数据源暂无该统计）</div>
             ) : (
               <>
                 <Column
@@ -765,7 +775,7 @@ export default function OverviewPage() {
           <Typography.Title level={3}>最近运行趋势（14 天）</Typography.Title>
           <div className="ov-chart-box">
             {trend.length === 0 ? (
-              <div className="ov-chart-empty" role="status">没有趋势数据（{data.source}——不渲染空轴冒充）</div>
+              <div className="ov-chart-empty" role="status">没有趋势数据（当前数据源暂无该统计）</div>
             ) : (
               <>
                 <Line
@@ -792,7 +802,7 @@ export default function OverviewPage() {
           <Typography.Title level={3}>各仓库分布</Typography.Title>
           <div className="ov-chart-box">
             {repoCounts.length === 0 ? (
-              <div className="ov-chart-empty" role="status">没有仓库分布数据（{data.source}——不渲染空轴冒充）</div>
+              <div className="ov-chart-empty" role="status">没有仓库分布数据（当前数据源暂无该统计）</div>
             ) : (
               <>
                 {/* 纯 CSS 横向条形（G2 类别轴在窄容器对长标签的竖排/逐字换行

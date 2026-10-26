@@ -269,7 +269,7 @@ function PgApprovalsSection({ source }) {
           </div>
           {(listQ.data?.items ?? []).length === 0 ? (
             <div className="empty-note" style={{ padding: '24px 0', color: '#888', textAlign: 'center' }}>
-              当前没有待审批票据（诚实零值——PENDING 状态的审批票记录为零）
+              当前没有待审批票据（PENDING 状态的审批票记录为零——真实空态，非加载失败）
             </div>
           ) : null}
           {(listQ.data?.items ?? []).map((t) => (
@@ -312,10 +312,11 @@ function MuApprovals() {
     <div>
       <div className="page-head">
         <div>
-          <h1>待审批</h1>
+          <h1>审批票总览</h1>
           <p className="page-sub">
-            高危修复审批票（P0/P1 逐条）——批准仅允许生成 DRY_RUN 修复建议：不写 GitHub、
-            不自动合并、branch protection 保持有效。操作入口在对应 PR 详情页。
+            高危修复审批票（P0/P1 逐条）——批准只会生成 DRY_RUN 修复建议（预演：记录建议但不执行，不向 GitHub 写入任何内容）
+            ；不自动合并，分支保护保持有效。
+            逐条处理入口在对应 PR 详情页；<Link to="/pending">前往「待处理」队列</Link>。
           </p>
         </div>
         <select aria-label="按状态筛选" value={statusFilter}
@@ -351,12 +352,15 @@ function MuApprovals() {
       ) : rows.length === 0 ? (
         <div className="panel approvals-entry">
           <div>
-            <strong>当前没有审批票（诚实零值）。</strong>
+            <strong>当前没有审批票（真实空态，非加载失败）。</strong>
             <div className="muted">
               P0/P1 审查结果出现时，此处与「待处理」页会列出待办；P2/P3 不产生审批票（人工裁量入口在 PR 详情）。
             </div>
+            <div className="muted" style={{ marginTop: 6 }}>
+              第一张审批票的产生方式：仓库接入并触发审查后，发现 P0/P1 问题即生成审批票——接入入口见 <Link to="/multiuser">组织与成员权限</Link>，队列见 <Link to="/pending">待处理</Link>。
+            </div>
+            </div>
           </div>
-        </div>
       ) : (
         <div className="table-meta">{rows.length} 张审批票 · 状态 {statusFilter ? ticketMap(statusFilter).label : '全部'}</div>
       )}
@@ -418,7 +422,7 @@ function NonMuApprovals({ resolved, source }) {
       <div>
         <div className="page-head">
           <div>
-            <h1>待审批</h1>
+            <h1>审批票总览</h1>
             <p className="page-sub">
               人工安全门决策入口（隔离 test-auth 联调）。后端 0.2.0 已提供审批只读与决策端点；
               主体为 X-Test-Principal 测试 principal（非真实 GitHub 身份），数据为隔离 PG fixture。
@@ -456,7 +460,7 @@ function NonMuApprovals({ resolved, source }) {
     <div>
       <div className="page-head">
         <div>
-          <h1>待审批</h1>
+          <h1>审批票总览</h1>
           <p className="page-sub">
             人工安全门的决策入口。当前部署的审批服务仅提供审批票的存储与审计留痕（可追溯），
             只读票视图与决策接口尚未接入——真实审批在接口与权限就绪前不启用。

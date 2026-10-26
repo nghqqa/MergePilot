@@ -123,7 +123,7 @@ test('LFE-1 试用栈形态：fixture 开放 → 试用身份区块渲染；OAut
   const s = json();
   assert.ok(s.includes('以试用身份登录'), '试用身份登录按钮应渲染');
   assert.ok(s.includes('试用身份名'), '字段 label 应渲染');
-  assert.ok(s.includes('GitHub 登录暂未开放'), 'OAuth 未配置应如实提示');
+  assert.ok(s.includes('GitHub 登录入口未开放') && s.includes('需管理员在服务端配置 GitHub OAuth'), 'OAuth 未配置如实提示（含启用方式）');
   assert.ok(!s.includes('使用 GitHub 登录'), '未配置平台不渲染 OAuth 按钮（不伪装可用）');
   assert.ok(!/MU_ALLOW_FIXTURE_LOGIN/.test(s), '页面不出现部署变量名');
 });

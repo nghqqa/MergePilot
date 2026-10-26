@@ -67,7 +67,7 @@ export default function CChainPage() {
               <span>强制校验：<Tag color={status.enforce?.flag ? 'orange' : 'default'}>
                 {status.enforce?.flag ? '开启（自动修复前必须通过就绪校验）' : '关闭'}</Tag></span>
               {status.audit_note?.written === false && status.audit_note?.error ? (
-                <span><Tag color="orange">审计未落库</Tag>{String(status.audit_note.error).slice(0, 80)}</span>
+                <span><Tag color="orange">审计未落库</Tag>当前实例尚未初始化审计记录（全新实例属预期，不影响审查）；技术详情：<code>{String(status.audit_note.error).slice(0, 80)}</code></span>
               ) : null}
             </Space>
             {!overallOk && (status.blocked_conditions ?? []).length > 0 ? (

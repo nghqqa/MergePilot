@@ -44,13 +44,20 @@ export default function ReposPage() {
         <ErrorBox error={reposQ.error} onRetry={() => setAttempt((n) => n + 1)} />
       ) : reposQ.status !== 'done' ? (
         <SkeletonRows rows={4} cols={3} />
+      ) : repos.length === 0 ? (
+        <div role="note" style={{ border: "1px solid #e6e6e6", background: "#fafafa", borderRadius: 8, padding: "12px 16px" }}>
+          <strong>还没有可展示的仓库。</strong>
+          <div style={{ marginTop: 6 }}>接入路径：在 <Link to="/multiuser">组织与成员权限</Link> 完成仓库接入（安装 GitHub App / 绑定仓库）后，仓库会出现在这里；连接状态见 <Link to="/datasources">数据源</Link>。</div>
+        </div>
       ) : (
         <>
+          {repos.length > 0 ? (
           <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
             {repos.length} 个仓库
             {contract ? '（由服务配置声明）'
               : ` · ${hasPrCounts ? `${totalPrs} 个 PR` : 'PR 数未取得'}${hasRunCounts ? ` · ${totalRuns} 次运行记录` : ''}${hasActivity ? ` · 数据截至最近记录 ${fmtTime(latestActivity)}` : ''}`}
           </Typography.Paragraph>
+          ) : null}
           <Table
             size="small" rowKey="repo" dataSource={repos}
             pagination={false}
