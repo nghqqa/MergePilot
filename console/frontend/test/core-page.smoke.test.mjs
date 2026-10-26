@@ -106,7 +106,8 @@ test('/core 页面加载冒烟：渲染主内容、请求全部端点、不进�
   try {
     const json = JSON.stringify(renderer.toJSON());
     assert.ok(json.includes('系统状态与接线'), '主内容应渲染（页面标题）');
-    assert.ok(json.includes('Gate / Bridge 分层'), '数据区块应渲染（data 加载成功后才有）');
+    assert.ok(json.includes('本页为系统内部状态页'), '人话说明必须在场（不在折叠内）');
+    assert.ok(json.includes('技术详情：Gate / Bridge 执行分层'), '折叠头必须在场（内容默认收起，rc8.4 起）');
     assert.ok(!json.includes('请求失败'), '/core 不得进入错误态（回归锁：fxv ReferenceError）');
     assert.ok(!json.includes('is not defined'), '不得向用户暴露裸 JS 错误');
     for (const p of Object.keys(ROUTES)) {

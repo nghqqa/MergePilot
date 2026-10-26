@@ -149,7 +149,7 @@ test('趋势区诚实空态：trend=[] 显示文案不渲染空轴；有数据�
   try {
     const emptyJson = JSON.stringify(emptyRenderer.toJSON());
     assert.ok(emptyJson.includes('没有趋势数据'), 'trend=[] 应显示诚实空态文案');
-    assert.ok(emptyJson.includes('不渲染空轴冒充'), '空态文案应说明不冒充');
+    assert.ok(emptyJson.includes('当前数据源暂无该统计'), '空态文案如实呈现且不含内部标识（不冒充语义保留）');
   } finally {
     await act(async () => { emptyRenderer.unmount(); });
   }

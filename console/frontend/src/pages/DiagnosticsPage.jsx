@@ -28,7 +28,7 @@ export default function DiagnosticsPage() {
   // MU 实时源（v16 审批门 + Wave 2A OAuth 已上线）的真实接线
   const muWiring = [
     ['OAuth 登录', '已接入——GitHub OAuth 已上线（多用户生产会话，按邀请获得角色）', true],
-    ['审批只读 + 决策', '已接入——/api/mu/approvals 只读与决策端点已接线（高危修复审批门；批准仅生成 DRY_RUN 建议）', true],
+    ['审批只读 + 决策', '已接入——/api/mu/approvals 只读与决策端点已接线（高危修复审批门；批准仅生成 DRY_RUN 建议——DRY_RUN＝仅生成建议文本，不向 GitHub 写入）', true],
     ['数据面', '已接入——多用户实时数据，按登录会话的租户隔离（仅见本组织数据）', true],
     ['PR 审查', '已接入——GitHub App 只读接入，PR 创建后自动同步审查', true],
     ['应用补丁', '已接入——独立预览+确认后由系统机器人提交 PR 源分支（远端可达性以预览时核验为准）', true],
@@ -89,7 +89,7 @@ export default function DiagnosticsPage() {
           <div className="kv"><div className="kv-label">服务</div><div className="kv-value mono">{health.service ?? '—'}</div></div>
           <div className="kv"><div className="kv-label">版本</div><div className="kv-value mono">{health.version ?? '—'}</div></div>
           <div className="kv"><div className="kv-label">数据模式</div><div className="kv-value">{health.data_mode ?? '—'}</div></div>
-          <div className="kv"><div className="kv-label">认证</div><div className="kv-value">{health.auth ?? '未实现（401 如实返回）'}</div></div>
+          <div className="kv"><div className="kv-label">认证</div><div className="kv-value">{health.auth ?? '传统会话接口未使用（多用户模式 401 属预期，非故障）'}</div></div>
           {health.runs != null ? (
             <div className="kv"><div className="kv-label">运行记录</div><div className="kv-value num">{health.runs}</div></div>
           ) : null}

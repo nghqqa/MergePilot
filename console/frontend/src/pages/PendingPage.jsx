@@ -151,9 +151,9 @@ export default function PendingPage() {
       <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>{pageTitle}</Typography.Title>
       {isMuQueue ? (
         <Typography.Paragraph type="secondary">
-          当前待人工批准的高危修复审批票（P0/P1 逐条开票，服务端权威；票面绑定其产生时的 head，
-          PR 推进后过期/漂移票按服务端规则失效）。本页只含待审批票——失败或卡住的执行不在本页，
-          见工作台「已阻断 / 异常」。逐条处理入口也可在「审批」页操作。
+          本页只列出等待人工批准的高危（P0/P1）修复审批票——一张票对应一次审查结果；
+          该 PR 有新提交后，旧票自动失效（需要在新审查结果上重新批准）。
+          失败或卡住的执行不在本页（见「系统状态」）。逐条处理也可在「审批」页进行。
         </Typography.Paragraph>
       ) : (
         <Typography.Paragraph type="secondary">
@@ -212,6 +212,7 @@ export default function PendingPage() {
                 暂无待审批票——当前没有待批准的高危修复票。已阻断/受控停止的 PR 见
                 <Link to="/overview?focus=blocked" style={{ marginInlineStart: 4 }}>工作台「已阻断」</Link>
                 （与「审批」页的已批准/已驳回历史记录互不混同）。
+                第一张票的产生方式：完成仓库接入并触发审查后，发现 P0/P1 问题即在此生成审批票——接入入口见 <Link to="/multiuser">组织与成员权限</Link>。
               </span>
             ) : '没有需要处理的事项' }}
             columns={[

@@ -273,7 +273,7 @@ export default function LoginPage() {
               </Button>
             ) : prov.phase === 'ready' ? (
               <Alert type="warning" showIcon style={{ marginTop: 16, marginBottom: 8 }}
-                     message="GitHub 登录暂未开放——请联系管理员启用后重试" />
+                     message="GitHub 登录入口未开放——需管理员在服务端配置 GitHub OAuth（配置后此入口自动出现）。当前可先用下方试用身份登录。" />
             ) : null}
             {/* Gitee 次入口：与主入口同规则（服务端 providers 配置驱动，未配置不渲染） */}
             {giteeReady && (
@@ -308,7 +308,7 @@ export default function LoginPage() {
                              rules={[{ required: true, message: '请输入管理员预置的身份名（如 trial-maintainer）' }]}
                              style={{ marginBottom: 10 }}>
                     <Input id="login-fixture-name" prefix={<UserOutlined aria-hidden="true" />}
-                           placeholder="例如 trial-maintainer" autoComplete="username" size="large" />
+                           placeholder="输入管理员预置的试用身份名" autoComplete="username" size="large" />
                   </Form.Item>
                   <Button type="default" htmlType="submit" block size="large" className="login-oauth-btn"
                           disabled={pending !== null}>

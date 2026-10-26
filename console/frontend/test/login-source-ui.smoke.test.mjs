@@ -205,7 +205,7 @@ test('LSV-5 登录页文案不含部署变量名/内部术语；未配置平台�
     assert.ok(!text.includes('MU_'), '不出现部署变量名前缀');
     assert.ok(!text.includes('auth_unavailable'), '不出现内部 reason 术语');
     assert.ok(!text.includes('使用 GitHub 登录'), '未配置平台不渲染入口');
-    assert.ok(text.includes('GitHub 登录暂未开放——请联系管理员启用后重试'), '未配置平台如实提示（人话）');
+    assert.ok(text.includes('GitHub 登录入口未开放——需管理员在服务端配置 GitHub OAuth'), '未配置平台如实提示（人话，含启用方式）');
     assert.ok(text.includes('使用 Gitee 登录'), '已配置平台正常渲染');
   } finally { await act(async () => { renderer.unmount(); }); }
 });

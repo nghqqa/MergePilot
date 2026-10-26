@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Table, Tag, Typography } from 'antd';
+import { Alert, Collapse, Table, Tag, Typography } from 'antd';
 import { useAuth } from '../auth.jsx';
 import { STATUS_META } from '../theme.js';
 import { fxvMap, fxvArtifactMap, ticketMap, ticketActionMap, toneToColor, muRunMap, MU_RUN } from '../status-map.js';
@@ -32,6 +32,16 @@ async function apiGet(path) {
   }
   return body;
 }
+
+  const gateBridgeDetail = (
+    <>
+      <Typography.Title level={3} style={{ marginTop: 24 }}>Gate / Bridge 分层</Typography.Title>
+      <Typography.Paragraph type="secondary">
+        Skill Gate PRODUCE = receipts 齐备有效绑定（不等于安全已批准）；HIGH 人工门由 Bridge 执行 →
+        action_required（≠ success）。RAG=EXCLUDED · Fixer/Verifier=DISABLED · merge/push=DISABLED。
+      </Typography.Paragraph>
+    </>
+  );
 
 function SourceTag({ source, error }) {
   const meta = STATUS_META[source] || { label: source, tone: 'default' };
@@ -119,11 +129,10 @@ export default function CorePage() {
           description="请检查 PG 连接。" />
       )}
 
-      <Typography.Title level={3} style={{ marginTop: 24 }}>Gate / Bridge 分层</Typography.Title>
-      <Typography.Paragraph type="secondary">
-        Skill Gate PRODUCE = receipts 齐备有效绑定（不等于安全已批准）；HIGH 人工门由 Bridge 执行 →
-        action_required（≠ success）。RAG=EXCLUDED · Fixer/Verifier=DISABLED · merge/push=DISABLED。
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+        本页为系统内部状态页——全新或未配置实例显示「已阻断 / 关闭」属预期，不影响已接入仓库的审查。
       </Typography.Paragraph>
+      <Collapse ghost size="small" items={[{ key: 'gate-bridge', label: '技术详情：Gate / Bridge 执行分层（内部术语，排障用）', children: gateBridgeDetail }]} />
 
       {data && (
         <>
@@ -211,7 +220,7 @@ export default function CorePage() {
           {data.fxv?.capability === 'fxv_persistence_not_tenant_scoped' ? (
             <Alert type="info" showIcon style={{ marginBottom: 12 }}
               message="自动修复的全局统计在多用户控制台不展示"
-              description="自动修复的记录库未按组织隔离——展示全局统计会跨组织泄露。修复执行记录见「组织与接入」页的 PR 审查管线。" />
+              description="自动修复的记录库未按组织隔离——展示全局统计会跨组织泄露。修复执行记录见「组织与成员权限」页的 PR 审查管线。" />
           ) : null}
           {data.fxv?.metrics?.alerts?.length ? (
             <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`自动修复告警：${data.fxv.metrics.alerts.join('；')}`} />

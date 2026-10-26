@@ -851,7 +851,7 @@ function OnboardingPanel({ ob, session, providers, prCount, boundCount, onLogin,
         return (
           <Alert type="info" showIcon
             message="管理员尚未配置 GitHub App——配置完成后此步骤自动解锁"
-            description="需要管理员在部署侧配置 GitHub App 凭证（见 BETA-GUIDE）。此步骤在本页无法自助完成。" />
+            description="需要部署者在服务端配置 GitHub App 凭证（自托管时通常是您本人——编辑部署 .env 后重启，见 BETA-GUIDE）。此步骤在本页无法自助完成；成员邀请入口在本页下方「成员与邀请」区。" />
         );
       case 'bind':
         return <Button type="primary" href="#mu-ghapp">前往选择仓库并绑定</Button>;
@@ -1160,7 +1160,7 @@ export default function MultiUserPage() {
   return (
     <div>
       <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>
-        组织与接入（Developer Edition Beta）
+        组织与成员权限（Developer Edition Beta）
       </Typography.Title>
       <Typography.Paragraph type="secondary">
         PR 安全审查 · GitHub App 只读接入 · 多用户 RBAC · 完整审计追踪。
