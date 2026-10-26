@@ -46,15 +46,15 @@ PR 事件接入 → 审查发现 → 按策略进入修复与验证 → Console 
 Console、数据库和部署配置由你自行管理；官网是文档入口，**不是托管版 Console 或登录入口**。
 
 1. 阅读[快速开始](https://docs.nghqqa.cn/quickstart.html)，准备 Docker Compose、Node.js ≥ 20、GitHub App、OAuth App 和审查用的 LLM 端点。
-2. 选择 [rc.35.6-rc8 部署包](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8)（镜像 `ghcr.io/nghqqa/mergepilot-console@sha256:003d963347d400222c3b503cef0fe840452d20f1429db78f495e5585f9be3eea`；离线 tar、安装配方包、SHA256SUMS、SBOM 和扫描记录见该 Release 与[下载与校验](https://docs.nghqqa.cn/downloads.html)），或使用下面的仓库部署方式。
-3. 按[部署指南](deploy/selfhost/README.md)完成配置和首管理员初始化，再登录你自己的 Console。
+2. 选择 [rc.35.6-rc8.4.1 部署包](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8.4.1)（安全修复版；镜像 OCI index `ghcr.io/nghqqa/mergepilot-console@sha256:c874b4d88ef67387401caf5b04d94ee9d4aa2fd9c6254301fc167a9d5505cbd3`；离线 tar、SHA256SUMS、SBOM 和扫描记录见该 Release 与[下载与校验](https://docs.nghqqa.cn/downloads.html)），或使用下面的仓库部署方式。
+3. 按[部署指南](deploy/selfhost/README.md)完成配置和首管理员初始化，再登录你自己的 Console。**觉得安装手续太多？**把仓库里的 [INSTALL-WITH-AI.md](INSTALL-WITH-AI.md) 整段复制给你的 AI 编码助手，让它带你逐步执行（每步都有可校验判据），或遇到卡点把该文件与报错一起交给 AI 排障。
 4. 日常使用与验收：[用户指南](docs/delivery/USER-GUIDE.md)（含受邀用户/自托管管理员两条首次使用路径）、[验收清单](docs/delivery/ACCEPTANCE-CHECKLIST.md)。
 
 ### 从仓库部署
 
-以下使用 `main` 的部署文件；`deploy/selfhost/docker-compose.yml` 默认 pin 的 console 镜像
-digest 可能落后于最新发行——**部署前按目标 Release 说明改到对应不可变 digest**（pgvector
-与 bge-sidecar digest 已钉死）。
+以下使用 `main` 的部署文件；`deploy/selfhost/docker-compose.yml` 当前已 pin 到
+rc.35.6-rc8.4.1 官方 index digest（pgvector 与 bge-sidecar digest 亦已钉死）——升级时按
+目标 Release 说明改到对应不可变 digest。
 
 ```bash
 git clone https://github.com/nghqqa/MergePilot.git
