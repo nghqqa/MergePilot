@@ -104,6 +104,14 @@
 <li><code>/api/health</code> 的 version 字段即运行版本真源。</li>
 </ul>
 
+<h2>基础镜像 CVE 处置</h2>
+<ul>
+<li>策略：基础镜像按 digest 钉定（禁浮动 tag）；alpine 仓库发布修复而基础快照滞后时，构建期 <code>apk --no-cache upgrade</code> 显式拉取闭合（幂等）；</li>
+<li>CVE-2026-85091（zlib）：rc.35.6-rc2 起闭合；</li>
+<li>CVE-2026-111497（brotli 解码器越界写）：rc.35.6-rc8.4.1 双面闭合——基础镜像前移至含 node 22.23.4 的 node:22-alpine（node 内置 brotli 面，apk 无法修，只能钉定 digest 前移）+ <code>brotli-libs</code> 1.2.1-r0（libcurl/git fetch 链路面）；防复发回归锁入 CI（root 探针断言，非 root 探测失败不作为修复证据）；</li>
+<li>边界：trivy 不覆盖 node 二进制内置 brotli，node 版本须以镜像内 root 探针（<code>scripts/verify-image-security-fixes.cjs</code>）或 <code>node --version</code> 实测为准，不能只依据扫描结果宣称修复。</li>
+</ul>
+
 <h2>升级安全</h2>
 <p>升级前 <code>pg_dump</code>；镜像按 digest 拉取（不用浮动 tag）；
 升级窗口内 consumer 停止期间的投递会在恢复后由 GitHub 重投（幂等）。</p>

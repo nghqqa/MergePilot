@@ -60,17 +60,17 @@
 <!-- /nav:docs -->
 <article class="doc">
 <div class="crumbs"><a href="index.html">首页</a> / 下载与校验</div>
-<h1>下载与校验（0.2.0-beta.6-rc.35.6-rc8 预发布）</h1>
+<h1>下载与校验（0.2.0-beta.6-rc.35.6-rc8.4.1 安全修复版预发布）</h1>
 
 <h2 id="release-scope">发布与源码范围</h2>
-<p>截至 2026-10-25，本页官方制品对应 rc.35.6-rc8 / <code>a50f034b</code>。rc.35.6-rc8 是<strong>预发布</strong>。合入 main、隔离验收通过、发布到官方 registry 是三个不同状态。<strong>生产状态（2026-10-26 勘误）：生产实例当前运行 rc.35.6-rc8.3</strong>（index digest <code>sha256:4ed03fc9…c666</code>；/api/health 实测 version=<code>v0.2.0-beta.6-rc.35.6-rc8.3</code>、git_commit=<code>fca1f7ba</code>）；<strong>rc.35.6-rc8.4 已发布（GHCR tag/Release 可下载，index <code>sha256:3b39acff…8f43</code>）但尚未部署</strong>——可下载制品与生产运行版本是两个不同状态。此前本页「已于 2026-10-25 受控换版至 rc8.4」表述有误（且误引 rc8.1 digest），特此更正。rc8 系列生产运维事实（#509 swap 工具、PG 备份+rc7/rc8 双回滚锚就位、真实浏览器 OAuth 登录验收（GitHub 两角色+Gitee maintainer）与连续 ≥60 分钟观察）在 rc8.3 及更早换版时实证；试用环境保持原状态未动。</p>
+<p>截至 2026-10-26，本页官方制品对应 <strong>rc.35.6-rc8.4.1（安全修复版）</strong> / <code>ba089624</code>。rc.35.6-rc8.4.1 是<strong>预发布</strong>。合入 main、隔离验收通过、发布到官方 registry 是三个不同状态。<strong>生产状态：生产实例当前运行 rc.35.6-rc8.3</strong>（index digest <code>sha256:4ed03fc9…c666</code>；/api/health 实测 version=<code>v0.2.0-beta.6-rc.35.6-rc8.3</code>、git_commit=<code>fca1f7ba</code>）；<strong>rc.35.6-rc8.4 与 rc.35.6-rc8.4.1 均已发布（GHCR tag/Release 可下载）但尚未部署</strong>——可下载制品与生产运行版本是两个不同状态，生产换版须待用户单独授权。此前本页「已于 2026-10-25 受控换版至 rc8.4」表述有误（且误引 rc8.1 digest），2026-10-26 已勘误。rc8 系列生产运维事实（#509 swap 工具、PG 备份+rc7/rc8 双回滚锚就位、真实浏览器 OAuth 登录验收（GitHub 两角色+Gitee maintainer）与连续 ≥60 分钟观察）在 rc8.3 及更早换版时实证；试用环境保持原状态未动。</p>
 <div class="table-wrap">
 <table>
 <caption>选择版本时应区分的三种对象</caption>
 <thead><tr><th scope="col">对象</th><th scope="col">范围</th><th scope="col">获取与验证</th></tr></thead>
 <tbody>
-<tr><td>已发布 rc.35.6-rc8（预发布）</td><td>源码 <code>a50f034b</code>；含 rc.35.6-rc7 全部内容，另加（PR <a href="https://github.com/nghqqa/MergePilot/pull/525">#525</a>）：collectReply 有界分页+分阶段诊断（默认关）+deadline 真实墙钟化（修测试层常量时钟挂起——CI gate 真因）+6 场景行为回归入 CI；部署可重复性与认证契约收口（PR <a href="https://github.com/nghqqa/MergePilot/pull/526">#526</a>）：console↔agentteams 网络接线声明化（compose 叠加+入口幂等合并，重建免手工 network connect）+入口步骤 7 login_mx 定义修复+认证注释与实现对齐（cli-token=ctrl 铸 10 年 SA JWT，签名面验证，restart/同卷 recreate 存活）；构建注入完整 GIT_COMMIT</td><td>使用下方官方 digest、Release 附件和 SHA256SUMS；核对 health 的 version/git_commit</td></tr>
-<tr><td>发布后源码修正</td><td>rc.35.6-rc8 发布之后合入 main 的修正（发布时点 main 即 <a href="https://github.com/nghqqa/MergePilot/commit/a50f034be27f6fa89ebd8553afee42c674e34ade"><code>a50f034b</code></a>，此后以 main 最新为准）</td><td>尚未包含在上述官方镜像；需按所选 commit 自建并验证，见<a href="build-from-source.html">源码构建</a></td></tr>
+<tr><td>已发布 rc.35.6-rc8.4.1（预发布·安全修复版）</td><td>源码 <code>ba089624</code>（PR <a href="https://github.com/nghqqa/MergePilot/pull/539">#539</a>）；含 rc.35.6-rc8.4 全部内容，另加：CVE-2026-111497（brotli 解码器越界写）双面闭合——①基础镜像钉定 node:22-alpine <code>fe4f6d74…9914</code>（实测内含 node 22.23.4，闭合 node 内置 brotli 面；两阶段钉定、禁浮动 tag）②构建期 <code>apk --no-cache upgrade zlib brotli-libs</code> 拉取 1.2.1-r0（闭合 libcurl/git fetch 链路面；zlib CVE-2026-85091 同先例）；防复发回归锁 10 场景入 CI（root 探针断言器：非 root 探测失败不参与判定）；构建注入完整 GIT_COMMIT</td><td>使用下方官方 digest、Release 附件和 SHA256SUMS；核对 health 的 version/git_commit</td></tr>
+<tr><td>发布后源码修正</td><td>rc.35.6-rc8.4.1 发布之后合入 main 的修正（发布时点 main 即 <a href="https://github.com/nghqqa/MergePilot/commit/ba089624e266f7aa14dda3f45285a3232b7f5938"><code>ba089624</code></a>，此后以 main 最新为准）</td><td>尚未包含在上述官方镜像；需按所选 commit 自建并验证，见<a href="build-from-source.html">源码构建</a></td></tr>
 <tr><td>隔离试用候选</td><td>用于浏览器与试用验证的本地构建</td><td>不作为公开发行镜像，不复用官方 tag/digest；独立新用户试用仍待验</td></tr>
 </tbody>
 </table>
@@ -93,24 +93,24 @@ CVE-2026-85091（zlib 1.3.2-r0→1.3.2-r1）闭合、构建注入完整 GIT_COMM
 （守卫按方法+路径严格匹配并统计评论写端点调用；发布抽屉组件行为回归进 CI）。</p>
 
 <h2>官方镜像（GHCR，不可变 digest）</h2>
-<pre><code>docker pull ghcr.io/nghqqa/mergepilot-console@sha256:003d963347d400222c3b503cef0fe840452d20f1429db78f495e5585f9be3eea</code></pre>
+<pre><code>docker pull ghcr.io/nghqqa/mergepilot-console@sha256:c874b4d88ef67387401caf5b04d94ee9d4aa2fd9c6254301fc167a9d5505cbd3</code></pre>
 <table>
 <tr><th>项</th><th>值</th></tr>
-<tr><td>digest（本版为单平台构建，两个对象）</td><td><strong>manifest（mediaType=manifest.v2，linux/amd64）</strong>：<code>sha256:003d963347d400222c3b503cef0fe840452d20f1429db78f495e5585f9be3eea</code>（与 tag 同源；按 digest 拉取用它；匿名可核）· <strong>config</strong>：<code>sha256:c5081829608d82dea337ee2ba304e0691660e2546f91651928586597381823de</code>（=本地构建 image ID；经典存储引擎的 <code>docker image inspect</code> <code>.Id</code> 即此值，跨引擎不比较 <code>.Id</code>）。本版无 OCI index、无 buildx attestation manifest（经典 docker build，非 buildx 多平台）。</td></tr>
-<tr><td>tag</td><td><code>v0.2.0-beta.6-rc.35.6-rc8</code>（与该 index digest 同源，已核验）</td></tr>
-<tr><td>内置版本</td><td><code>v0.2.0-beta.6-rc.35.6-rc8</code>（/api/health version 真源；git_commit=<code>a50f034be27f6fa89ebd8553afee42c674e34ade</code>——与源码 tag 一致）</td></tr>
-<tr><td>源码</td><td>tag commit <code>a50f034b</code>（mu schema v29 不变；ragtrial 新增 <code>run_rag_snapshots</code> 一表——CREATE TABLE IF NOT EXISTS，首次 RAG API 访问或首次审查自动创建；rc3 旧镜像忽略该表，双向兼容）</td></tr>
+<tr><td>digest（四个不同对象，勿要求相等）</td><td><strong>OCI index</strong>：<code>sha256:c874b4d88ef67387401caf5b04d94ee9d4aa2fd9c6254301fc167a9d5505cbd3</code>（与 tag 同源；按 digest 拉取用它；匿名可核）· <strong>linux/amd64 平台 manifest</strong>：<code>sha256:d75bae6e0e35c1807da32f0afc04b40c1236a9bf77394b8c522e3f8a7861ac7e</code> · <strong>amd64 config</strong>：<code>sha256:44206496d8b9007846227b00f66c2b38a9e8f739bb4ad78ff12a75d653020039</code> · 另有 buildx attestation manifest <code>sha256:30618d157246a3ead…</code>（unknown/unknown 平台——校验用前三者）。本地 <code>docker image inspect</code> 的 <code>.Id</code> 取决于引擎存储模式（containerd 存储=index digest；经典存储=config digest），不要拿 <code>.Id</code> 直接对照 index digest。</td></tr>
+<tr><td>tag</td><td><code>v0.2.0-beta.6-rc.35.6-rc8.4.1</code>（与该 index digest 同源，已核验；annotated tag→<code>ba089624</code>）</td></tr>
+<tr><td>内置版本</td><td><code>v0.2.0-beta.6-rc.35.6-rc8.4.1</code>（/api/health version 真源；git_commit=<code>ba089624e266f7aa14dda3f45285a3232b7f5938</code>——与源码 tag 一致；发布前隔离栈实测 live+mu_schema_ready=true）</td></tr>
+<tr><td>源码</td><td>tag commit <code>ba089624</code>（mu schema v29 不变；ragtrial 新增 <code>run_rag_snapshots</code> 一表——CREATE TABLE IF NOT EXISTS，首次 RAG API 访问或首次审查自动创建；rc3 旧镜像忽略该表，双向兼容）</td></tr>
 </table>
 
-<h2>Release 附件（<a href="https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8">GitHub Releases</a>）</h2>
+<h2>Release 附件（<a href="https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8.4.1">GitHub Releases</a>）</h2>
 <table>
 <tr><th>项</th><th>值</th></tr>
-<tr><td>离线 tar</td><td><code>mergepilot-console-v0.2.0-beta.6-rc.35.6-rc8.tar.gz</code></td></tr>
-<tr><td>大小</td><td>67,423,024 bytes</td></tr>
-<tr><td>SHA256</td><td><code>a71143f45bc37d301dc2eb2a76f9f326b4bb43d3c77ed4b11774b3aee594cb18</code>（见附件 <code>SHA256SUMS</code>，含 SBOM/扫描/配方包校验和）</td></tr>
-<tr><td>加载</td><td><code>docker load -i mergepilot-console-v0.2.0-beta.6-rc.35.6-rc8.tar.gz</code> → 按 digest 核对（<code>003d9633…e3eea</code>；load 后 <code>.Id</code>=<code>c5081829…23de</code> 已核对一致）</td></tr>
-<tr><td>核验记录</td><td>2026-10-25/26：GHCR tag 匿名 manifest/config 校验通过（manifest <code>sha256:003d9633…</code>）；离线包 gzip 完整性+docker load 身份核对一致；同一不可变制品用于 WSL 隔离引擎最小验收（live+mu_schema_ready、正式配方+声明式网络、一条隔离 DRY_RUN 任务全链 COMPLETED，executor=agentteams）；Release 附件匿名下载 SHA256SUMS 全量逐位校验通过</td></tr>
-<tr><td>历史版本</td><td>rc.35.6-rc7 / rc.35.6-rc6 / rc.35.6-rc5 / rc.35.6-rc4 / rc.35.6-rc3 / rc.35.6-rc2 / rc.35.6-rc1 / rc.35.5 及更早的镜像 digest / 部署包 / 校验和以各自 Release 页为准（不可变保留）；档案见下方<a href="#rc356rc3-archive">rc.35.6-rc3</a>、<a href="#rc356rc1-archive">rc.35.6-rc1</a> 与 <a href="#rc355-archive">rc.35.5</a> 历史版本</td></tr>
+<tr><td>离线 tar</td><td><code>mergepilot-console-v0.2.0-beta.6-rc.35.6-rc8.4.1-offline.tar.gz</code></td></tr>
+<tr><td>大小</td><td>69,404,478 bytes</td></tr>
+<tr><td>SHA256</td><td><code>4d917f3d4a0c338ba71533cb4dde5277fa6732b16707ffc9f01f74c95a7ada6f</code>（见附件 <code>SHA256SUMS</code>，含 SBOM/扫描校验和）</td></tr>
+<tr><td>加载</td><td><code>docker load -i mergepilot-console-v0.2.0-beta.6-rc.35.6-rc8.4.1-offline.tar.gz</code> → 按 digest 核对（<code>c874b4d8…5cbd3</code>；containerd 引擎 load 后 <code>.Id</code>=index 同值，已核对一致）</td></tr>
+<tr><td>核验记录</td><td>2026-10-26：GHCR tag 匿名 index/manifest 校验通过（index <code>sha256:c874b4d8…</code>）；镜像内实测 node v22.23.4 / brotli-libs 1.2.1-r0（安全断言器 4/4，root 探针）；trivy 漏洞全零+secrets=0；隔离栈 health live+mu_schema_ready=true；离线包 gzip 完整性+docker load 身份核对一致；Release 附件匿名下载 SHA256SUMS 全量逐位校验通过</td></tr>
+<tr><td>历史版本</td><td>rc.35.6-rc8 系列（rc8/rc8.1/rc8.2/rc8.3/rc8.4，见下方<a href="#rc356rc8-series-archive">rc8 系列档案</a>）/ rc.35.6-rc7 / rc.35.6-rc6 及更早的镜像 digest / 部署包 / 校验和以各自 Release 页为准（不可变保留）；档案见下方<a href="#rc356rc3-archive">rc.35.6-rc3</a>、<a href="#rc356rc1-archive">rc.35.6-rc1</a> 与 <a href="#rc355-archive">rc.35.5</a> 历史版本</td></tr>
 </table>
 
 <p class="login-sub" style="margin:10px 0 0">GHCR 镜像包为 Public 仅表示自托管用户可匿名
@@ -120,29 +120,37 @@ CVE-2026-85091（zlib 1.3.2-r0→1.3.2-r1）闭合、构建注入完整 GIT_COMM
 <h2>SBOM 与扫描</h2>
 <table>
 <tr><th>项</th><th>值</th></tr>
-<tr><td>SBOM</td><td>CycloneDX 1.7 · <strong>47 组件</strong>（<code>mergepilot-console-v0.2.0-beta.6-rc.35.6-rc8-sbom.json</code>，随 Release 发布）</td></tr>
-<tr><td>漏洞扫描</td><td>trivy（DB=ghcr.io/aquasecurity/trivy-db）· <strong>0 HIGH/CRITICAL</strong>（<code>RC8-TRIVY-SCAN.txt</code>）</td></tr>
+<tr><td>SBOM</td><td>CycloneDX 1.7 · <strong>48 组件</strong>（<code>mergepilot-console-v0.2.0-beta.6-rc.35.6-rc8.4.1-sbom.json</code>，随 Release 发布）</td></tr>
+<tr><td>漏洞扫描</td><td>trivy（DB=ghcr.io/aquasecurity/trivy-db）· <strong>0 HIGH/CRITICAL/MEDIUM——漏洞全零</strong>（<code>trivy-rc841.txt</code>；rc8.4 所报 brotli CVE-2026-111497 HIGH 在本版清零）· 注意：trivy 不覆盖 node 二进制内置 brotli——node 22.23.4 由镜像内 root 探针断言（scripts/verify-image-security-fixes.cjs，4/4 PASS）</td></tr>
 <tr><td>秘密扫描</td><td><strong>secrets=0</strong></td></tr>
 </table>
 
 <h2>校验方法</h2>
 <pre><code># ── 在线拉取核验（以 registry index digest 为准）──
-docker pull ghcr.io/nghqqa/mergepilot-console@sha256:003d963347d400222c3b503cef0fe840452d20f1429db78f495e5585f9be3eea
-docker buildx imagetools inspect ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc8
-# Digest 行 = sha256:003d9633…e3eea（manifest.v2，单平台 linux/amd64）
+docker pull ghcr.io/nghqqa/mergepilot-console@sha256:c874b4d88ef67387401caf5b04d94ee9d4aa2fd9c6254301fc167a9d5505cbd3
+docker buildx imagetools inspect ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc8.4.1
+# Digest 行 = sha256:c874b4d8…5cbd3（OCI index，linux/amd64 + attestation）
 
 # ── 离线 tar 核验（文件级 SHA256 为第一权威）──
-sha256sum -c SHA256SUMS        # 期望 rc8.tar.gz = a71143f4…cb18
-docker load -i mergepilot-console-v0.2.0-beta.6-rc.35.6-rc8.tar.gz
-# 加载后 docker image inspect 的 .Id 应 = sha256:c5081829…23de（本版 config digest，经典存储）
+sha256sum -c SHA256SUMS        # 期望 rc8.4.1-offline.tar.gz = 4d917f3d…da6f
+docker load -i mergepilot-console-v0.2.0-beta.6-rc.35.6-rc8.4.1-offline.tar.gz
+# 加载后 docker image inspect 的 .Id = sha256:c874b4d8…5cbd3（containerd 存储=index digest；经典存储=config 44206496…0039）
 
 # ── 运行版本核验 ──
 curl -s http://127.0.0.1:48500/api/health | grep -E "version|git_commit"
-# 期望：v0.2.0-beta.6-rc.35.6-rc8 / git_commit=a50f034be27f6fa89ebd8553afee42c674e34ade</code></pre>
-<p>在线命令与离线 load/身份核验在 WSL 独立引擎（Docker 29.5.2，隔离环境）实测通过
-（2026-10-25/26，rc8 制品验收——含一条隔离 DRY_RUN 任务全链 COMPLETED；
-GHCR tag/离线 tar/附件匿名核验同日完成，见上方表格核验记录）。</p>
+# 期望：v0.2.0-beta.6-rc.35.6-rc8.4.1 / git_commit=ba089624e266f7aa14dda3f45285a3232b7f5938</code></pre>
+<p>在线命令与离线 load/身份核验于 2026-10-26 对 rc8.4.1 官方制品实测通过（隔离栈 live+mu_schema_ready、
+镜像内 node/brotli 版本断言、GHCR tag/离线 tar/附件匿名核验，见上方表格核验记录）。</p>
 
+<h2 id="rc356rc8-series-archive">历史版本：rc.35.6-rc8 系列（2026-10-25~26）</h2>
+<p>rc8 系列制品不可变保留（digest/附件以各自 Release 页为准）：
+rc.35.6-rc8（2026-10-25，源码 <code>a50f034b</code>，单平台 manifest.v2 <code>sha256:003d9633…e3eea</code>，config <code>c5081829…23de</code>，
+<a href="https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8">Release</a>）·
+rc.35.6-rc8.1（2026-10-25，index <code>sha256:5b46e315…20e6</code>，webhook 入口三层修复+保护状态恒显，<a href="https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8.1">Release</a>）·
+rc.35.6-rc8.2（2026-10-25，index <code>sha256:ca2b3606…</code>，RAG 指标徽章诚实呈现，<a href="https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8.2">Release</a>）·
+rc.35.6-rc8.3（2026-10-25，源码 <code>fca1f7ba</code>，index <code>sha256:4ed03fc9…c666</code>，知识检索页误报修复——生产当前运行版本，<a href="https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8.3">Release</a>）·
+rc.35.6-rc8.4（2026-10-26，源码 <code>2e23239</code>，index <code>sha256:3b39acff…8f43</code>，前端上手清晰度修复波，<a href="https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8.4">Release</a>）。
+rc8.4 起含 node:22-alpine 基础 CVE-2026-111497 HIGH 扫描项（rc8.4.1 双面闭合，见上）。</p>
 <h2 id="rc356rc6-archive">历史版本：rc.35.6-rc6（2026-10-21）</h2>
 <p>源码 <code>c094ad1c</code>；OCI index <code>sha256:f86595e5d1554f599266749d20ae6d3cf9b4af31e28b6706ed8b43bc40cb6415</code>；离线 tar SHA256 <code>28919a8d…14fa</code>（68,816,961 bytes）。内容：成员管理页统一发布首批（角色下拉+撤销+权限矩阵+契约锁定）。完整附件与校验和见
 <a href="https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc6">其 Release 页</a>（不可变保留）。</p>
@@ -190,6 +198,6 @@ GHCR tag/离线 tar/附件匿名核验同日完成，见上方表格核验记录
 发布页随版本更新追加，不修改历史条目。</div>
 </article>
 </main>
-<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.6-rc8（预发布） · Apache-2.0</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.6-rc8.4.1（预发布·安全修复版） · Apache-2.0</footer>
 </body>
 </html>
