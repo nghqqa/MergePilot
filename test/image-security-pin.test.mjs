@@ -101,12 +101,16 @@ test('BROTLI-9 版本比较边界', () => {
   assert.equal(verifier.compareApkVersion('garbage', '1.2.1-r0'), null);
 });
 
-test('BROTLI-10 探针输出解析（含 apk info 的 description 噪音行）', () => {
+test('BROTLI-10 探针输出解析：已安装版本取自 installed DB（apk info 会吐旧版残留块——candidate.2 实测坑）', () => {
   const sample = [
     'v22.23.4',
     '---BROTLI---',
-    'brotli-libs-1.2.1-r0 description:',
-    'Generic lossless compressor (libraries)',
+    '1.2.1-r0',
+    '---POLICY---',
+    'brotli-libs policy:',
+    '  1.2.1-r0:',
+    '    lib/apk/db/installed',
+    '    https://dl-cdn.alpinelinux.org/alpine/v3.24/main',
     '---CAND---',
     'Downloading brotli-libs-1.2.1-r0',
   ].join('\n');

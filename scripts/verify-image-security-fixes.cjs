@@ -94,7 +94,20 @@ function evaluateProbes(probes) {
 }
 
 function runProbe(image, user) {
-  const cmd = 'node --version; echo ---BROTLI---; apk info brotli-libs; echo ---CAND---; apk fetch --simulate brotli-libs';
+  // 已安装版本一律读 /lib/apk/db/installed（权威）：apk info 会同时吐出旧版本的
+  // 残留 info 块（candidate.2 实测：DB=1.2.1-r0 而 apk info 首行为 1.2.0-r1），
+  // 按首行正则取值会冤枉好镜像。apk policy 仅作人读证据附在输出里，不参与解析。
+  const cmd = [
+    'node --version',
+    'echo ---BROTLI---',
+    "awk '/^P:brotli-libs$/{getline; sub(/^V:/,\"\"); print; exit}' /lib/apk/db/installed",
+    'echo ---POLICY---',
+    'apk policy brotli-libs',
+    'echo ---UPDATE---',
+    'apk update',
+    'echo ---CAND---',
+    'apk fetch --simulate brotli-libs',
+  ].join('; ');
   try {
     const out = execFileSync('docker',
       ['run', '--rm', '--user', user, '--entrypoint', '/bin/sh', image, '-c', cmd],
@@ -119,8 +132,8 @@ function parseProbeOutput(out) {
     return m ? m[0] : null;
   })();
   const installedBrotli = (() => {
-    const seg = grab('---BROTLI---', '---CAND---') || '';
-    const m = /brotli-libs-(\d+(?:\.\d+)*-r\d+)/.exec(seg);
+    const seg = grab('---BROTLI---', '---POLICY---') || '';
+    const m = /(\d+(?:\.\d+)*-r\d+)/.exec(seg);
     return m ? m[1] : null;
   })();
   const candidateBrotli = (() => {
