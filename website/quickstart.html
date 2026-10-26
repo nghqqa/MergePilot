@@ -64,9 +64,12 @@
 <p>本页面向部署者。需要 Docker 与 Docker Compose v2、Git、Node.js ≥ 20（运行预检脚本），
 以及 GitHub App、OAuth App 和对应配置。耗时取决于凭据与网络入口准备情况。
 已有实例的受邀成员请读<a href="user-guide.html">首次使用</a>。</p>
-<p>以下命令固定到已发布预发布候选 rc.35.6-rc8（源码 <code>a50f034b</code>）；其发布之后合入 main
-的修正不会自动进入该镜像，见
-<a href="downloads.html#release-scope">发布与源码范围</a>。</p>
+<p>以下步骤固定到当前推荐自托管版本 <strong>rc.35.6-rc8.4.1（安全修复版）</strong>
+（源码 <code>ba089624</code>；镜像 OCI index
+<code>sha256:c874b4d88ef67387401caf5b04d94ee9d4aa2fd9c6254301fc167a9d5505cbd3</code>），
+完整校验与供应链档案见
+<a href="downloads.html#release-scope">下载与校验</a>与
+<a href="https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8.4.1">该版 Release</a>。</p>
 
 <div class="warn">先读·这是什么形态：MergePilot 是<strong>用户自托管</strong>产品——
 Console、数据库、OAuth 配置与业务数据全部运行在<strong>部署者自己的环境</strong>中。
@@ -75,49 +78,133 @@ Console、数据库、OAuth 配置与业务数据全部运行在<strong>部署�
 与受邀用户访问的安全入口。GHCR 镜像为 Public 仅表示可匿名拉取镜像，不表示提供托管
 Console 或公网入口。详见 <a href="multitenant-webhook.html">多租户与 webhook</a>。</div>
 
+<div class="note" style="margin:14px 0"><strong>觉得安装手续太多？</strong>
+本页步骤本身已按「可逐条执行+可校验」书写——你可以直接把<strong>下面第 5 节的 AI
+指令卡整段复制给任意 AI 编码助手</strong>（Claude Code / Codex / Cursor 等），由它带你
+执行：每一步都有明确成功判据，失败时把报错贴回给它即可。同版指令卡也在仓库
+<a href="https://github.com/nghqqa/MergePilot/blob/main/INSTALL-WITH-AI.md">INSTALL-WITH-AI.md</a>。</div>
+
 <h2>1. 获取源码与模板</h2>
 <pre><code>git clone https://github.com/nghqqa/MergePilot.git
-cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.35.6-rc8
-cd deploy/selfhost</code></pre>
+cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.35.6-rc8.4.1
+cd deploy/selfhost
+cp .env.example .env &amp;&amp; chmod 600 .env</code></pre>
 
 <h2>2. 填写配置</h2>
-<pre><code>cp .env.example .env &amp;&amp; chmod 600 .env</code></pre>
-<p>必填项（生成命令见 <a href="config-reference.html">配置参考</a>）：
-<code>POSTGRES_PASSWORD</code>、<code>CONSOLE_SESSION_SECRET</code>、
-GitHub App 四项、OAuth App 两项、LLM 四项。
-App 的创建步骤见 <a href="multitenant-webhook.html">多租户与 webhook</a>。</p>
+<p><strong>最小必填集</strong>（先跑起来看面板；审查接入可后补）：
+<code>POSTGRES_PASSWORD</code>（<code>openssl rand -hex 16</code>）、
+<code>CONSOLE_SESSION_SECRET</code>（<code>openssl rand -base64 32</code>）、
+<code>MU_BOOTSTRAP_ADMIN_SUBJECT=github-oauth:&lt;你的GitHub数字id&gt;</code>——
+<em>必须带 <code>github-oauth:</code> 前缀</em>，数字 id 见
+<code>https://api.github.com/users/&lt;你的用户名&gt;</code> 的 <code>id</code> 字段。
+这是初始管理员（platform_admin）的登录身份绑定；首次启动自动完成建库建表与
+bootstrap（幂等），无需手工 SQL。</p>
+<p><strong>审查接入（可后补）</strong>：GitHub App 四项、OAuth App 两项、LLM 四项
+（openai 兼容端点），创建步骤见
+<a href="multitenant-webhook.html">多租户与 webhook</a>；Gitee 全段可选。
+完整键说明见 <a href="config-reference.html">配置参考</a>与仓库内
+<code>deploy/selfhost/.env.example</code> 注释。</p>
+<p>可选组件：bge-m3（RAG 知识库检索）不放入模型文件会健康检查失败——不用 RAG 就
+<code>docker compose stop bge-m3</code>，不影响审查主功能。</p>
 
 <h2>3. 一键检查后启动</h2>
-<pre><code>node preflight.mjs                    # 只读检查，关键项失败即退出
+<pre><code>node preflight.mjs                    # 只读检查，关键项失败即退出（无 Node 可跳过）
 docker compose --env-file .env up -d
 node preflight.mjs --live             # 启动后活体探测
 curl http://127.0.0.1:48500/api/health</code></pre>
-<p>首次启动自动完成数据库 schema 初始化（至 v29），无需手工建表。</p>
+<p><strong>健康门判据</strong>：<code>ok: true</code>、<code>data_mode: live</code>、
+<code>mu_schema_ready: true</code>、
+<code>version: v0.2.0-beta.6-rc.35.6-rc8.4.1</code>——四项齐了才算装好。
+（可选）镜像一致性核对：<code>docker buildx imagetools inspect
+ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc8.4.1</code> 的 Digest 行
+应等于上方 index digest。</p>
 
-<h2>4. 初始化首任管理员，再邀请成员</h2>
+<h2>4. 首任管理员登录，再邀请成员</h2>
 <ol>
-<li><strong>空库先建管：</strong>部署者按仓库
-<a href="https://github.com/nghqqa/MergePilot/blob/main/deploy/selfhost/README.md#首个平台管理员初始化生产">首个平台管理员初始化（生产）</a>
-执行 SQL、身份硬校验与读回检查。生产保持 <code>MU_ALLOW_FIXTURE_LOGIN=0</code>；
-邀请永不授予 <code>platform_admin</code>，不能靠邀请或首次 OAuth 登录自动创建管理员。</li>
-<li><strong>管理员登录：</strong>初始化后，使用与 SQL 绑定身份一致的 GitHub 账号登录你自己的 Console，
-在「组织与接入」管理成员与邀请。</li>
-<li><strong>邀请业务成员：</strong>按平台数字 user id 创建邀请；受邀者用对应 OAuth 账号登录认领。
-审批、应用修复与合并需 <code>maintainer</code>，platform_admin 无这些权限，见
-<a href="roles.html">角色矩阵</a>。</li>
+<li><strong>管理员登录：</strong>用第 2 步 <code>MU_BOOTSTRAP_ADMIN_SUBJECT</code>
+绑定的<strong>同一 GitHub 账号</strong>访问 <code>http://127.0.0.1:48500/login</code>
+完成 OAuth；登录后右上角显示你的账号且角色为「平台管理员」。生产保持
+<code>MU_ALLOW_FIXTURE_LOGIN=0</code>（默认关闭）；邀请永不授予
+<code>platform_admin</code>。</li>
+<li><strong>邀请业务成员：</strong>在「组织与成员权限」按平台数字 user id 创建邀请
+（GitHub 或 Gitee）；受邀者用对应 OAuth 账号登录认领。审批、应用修复与合并需
+<code>maintainer</code>，platform_admin 无这些权限，见
+<a href="roles.html">角色矩阵</a>（五角色边界已在真实浏览器逐角色验收）。</li>
 </ol>
 <p>本机登录入口为 <code>http://127.0.0.1:48500/login</code>；受邀成员的日常操作见
 <a href="user-guide.html">首次使用</a>。健康检查成功只说明容器就绪，还需验证仓库绑定、webhook 与审查链路。</p>
+
+<h2 id="ai-card">5. 安装手续太多？把这段复制给 AI 助手</h2>
+<p>下卡为同一安装流程的「AI 可执行版」：包含全部命令、每步成功判据与硬性边界。
+整段复制给你的 AI 编码助手即可；它失败时会向你要报错输出。</p>
+<details>
+<summary><strong>点开复制：MergePilot 自托管 AI 安装指令卡（rc.35.6-rc8.4.1）</strong></summary>
+<pre><code>你是用户的部署助手。请带用户完成 MergePilot（自托管多用户 PR 审查工作台）的安装。
+严格按步骤执行；每步完成后向用户索取校验输出，确认通过再进入下一步；任何一步失败就停下，
+让用户把完整错误输出贴回给你分析，不要猜测性修复。
+
+环境前提：Linux amd64 或 Windows/macOS + Docker Desktop；Docker Engine ≥ 24 且有 docker compose v2；
+可选 Node.js ≥ 20（仅预检脚本需要，没有可跳过预检但不得跳过健康门）。默认只监听 127.0.0.1，本机评估无需公网。
+
+第 0 步（唯一需要用户人工做的准备）：
+1. GitHub 数字 id：访问 https://api.github.com/users/&lt;GitHub用户名&gt;，记下 id 字段（纯数字）——初始管理员登录身份绑定用；
+2. 两把随机值：openssl rand -hex 16（数据库口令）、openssl rand -base64 32（会话密钥）；
+3. 可后补：LLM API key（openai 兼容）、GitHub App/OAuth App、Gitee PAT——没有也能先装起来看面板。
+
+第 1 步 取模板：
+  git clone https://github.com/nghqqa/MergePilot.git
+  cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.35.6-rc8.4.1
+  cd deploy/selfhost
+  cp .env.example .env &amp;&amp; chmod 600 .env
+判据：checkout 指向 tag v0.2.0-beta.6-rc.35.6-rc8.4.1；.env 存在。
+
+第 2 步 填最小必填集（审查接入可后补）：编辑 .env 至少设置——
+  POSTGRES_PASSWORD=&lt;第0步口令&gt;
+  CONSOLE_SESSION_SECRET=&lt;第0步密钥&gt;
+  MU_BOOTSTRAP_ADMIN_SUBJECT=github-oauth:&lt;第0步数字id&gt;
+  （必须带 github-oauth: 前缀——这是初始管理员的身份绑定，不带前缀生产模式无法登录）
+可选：bge-m3（RAG 检索）不放模型文件会健康检查失败——不用 RAG 就 docker compose stop bge-m3，不影响审查主功能。
+
+第 3 步 启动与健康门（硬性判据）：
+  node preflight.mjs                        （无 Node 可跳过）
+  docker compose --env-file .env up -d
+  docker compose ps                         （console 与 postgres 应 running/healthy）
+  curl -s http://127.0.0.1:48500/api/health
+判据（全部满足才算过）：&quot;ok&quot;: true、&quot;data_mode&quot;: &quot;live&quot;、&quot;mu_schema_ready&quot;: true、
+&quot;version&quot;: &quot;v0.2.0-beta.6-rc.35.6-rc8.4.1&quot;。首次启动自动建库建表，无需手工 SQL。
+（可选）镜像一致性：docker buildx imagetools inspect ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc8.4.1
+的 Digest 行应等于 sha256:c874b4d88ef67387401caf5b04d94ee9d4aa2fd9c6254301fc167a9d5505cbd3。
+
+第 4 步 首次登录（用户本人操作，AI 不得代输凭据）：
+浏览器打开 http://127.0.0.1:48500/login → 「使用 GitHub 登录」→ 必须用第 2 步绑定的同一 GitHub 账号。
+判据：登录后页面右上角显示该账号且角色为「平台管理员」。被拒或角色不符→把页面提示贴回分析。
+
+第 5 步（可后补）接入审查能力：按 .env 注释段填 MU_LLM_* 与 GitHub App/OAuth App
+（App 创建见仓库 deploy/selfhost/README.md「多租户与 webhook」节），改后 docker compose --env-file .env up -d。
+
+硬性边界（任何情况下都不要做）：
+1. 不要把 48500 直接暴露公网；对外必须前置 TLS 反代并改回调为 https 域名；
+2. 不要把 .env 内容发到对话之外或提交进 git；
+3. 不要跳过健康门，健康门通过前不做任何业务操作；
+4. 升级前先 pg_dump 备份；镜像升级=改 compose 里的 digest 引用（不用浮动 tag）。
+
+失败处置：停下→要完整输出/容器日志（docker compose logs console --tail 50）→按输出定位；
+常见：端口被占（改 .env 端口段）、postgres 未就绪即访问（等 healthcheck）、忘记 MU_BOOTSTRAP_ADMIN_SUBJECT 前缀。</code></pre>
+<p>同版卡片（便于复制为文件）：
+<a href="https://github.com/nghqqa/MergePilot/blob/main/INSTALL-WITH-AI.md">INSTALL-WITH-AI.md</a>。</p>
+</details>
 
 <div class="warn">生产对外暴露：<strong>必须</strong>前置 TLS 反向代理并把回调地址改为 https 域名。
 生产 Webhook 地址必须<strong>公网 HTTPS 可达</strong>（转发到本机 48590，入口实现不限——
 见 <a href="multitenant-webhook.html">多租户与 webhook</a>）。
 明文 HTTP 不允许承载已认证会话（会话 Cookie 自带 Secure 属性）。详见
-<a href="security.html">安全加固</a>。</div>
+<a href="security.html">安全加固</a>。升级与回滚（pg_dump + digest 换版）见
+<a href="upgrade-rollback.html">升级与回滚</a>。</div>
 
-<p>下一步：<a href="selfhost-docker.html">Docker 自托管细节</a>。</p>
+<p>下一步：<a href="selfhost-docker.html">Docker 自托管细节</a> ·
+<a href="https://github.com/nghqqa/MergePilot/blob/main/deploy/selfhost/README.md">仓库内完整部署指南</a>。</p>
 </article>
 </main>
-<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.6-rc8（预发布） · Apache-2.0</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.6-rc8.4.1（预发布·安全修复版） · Apache-2.0</footer>
 </body>
 </html>
