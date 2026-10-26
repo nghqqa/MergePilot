@@ -63,7 +63,7 @@
 <h1>下载与校验（0.2.0-beta.6-rc.35.6-rc8.4.1 安全修复版预发布）</h1>
 
 <h2 id="release-scope">发布与源码范围</h2>
-<p>截至 2026-10-26，本页官方制品对应 <strong>rc.35.6-rc8.4.1（安全修复版）</strong> / <code>ba089624</code>。rc.35.6-rc8.4.1 是<strong>预发布</strong>。合入 main、隔离验收通过、发布到官方 registry 是三个不同状态。<strong>生产状态：生产实例当前运行 rc.35.6-rc8.3</strong>（index digest <code>sha256:4ed03fc9…c666</code>；/api/health 实测 version=<code>v0.2.0-beta.6-rc.35.6-rc8.3</code>、git_commit=<code>fca1f7ba</code>）；<strong>rc.35.6-rc8.4 与 rc.35.6-rc8.4.1 均已发布（GHCR tag/Release 可下载）但尚未部署</strong>——可下载制品与生产运行版本是两个不同状态，生产换版须待用户单独授权。此前本页「已于 2026-10-25 受控换版至 rc8.4」表述有误（且误引 rc8.1 digest），2026-10-26 已勘误。rc8 系列生产运维事实（#509 swap 工具、PG 备份+rc7/rc8 双回滚锚就位、真实浏览器 OAuth 登录验收（GitHub 两角色+Gitee maintainer）与连续 ≥60 分钟观察）在 rc8.3 及更早换版时实证；试用环境保持原状态未动。</p>
+<p>截至 2026-10-26，本页官方制品对应 <strong>rc.35.6-rc8.4.1（安全修复版）</strong> / <code>ba089624</code>。rc.35.6-rc8.4.1 是<strong>预发布</strong>。合入 main、隔离验收通过、发布到官方 registry 是三个不同状态。<strong>生产状态（2026-10-26 受控换版）：生产实例当前运行 rc.35.6-rc8.4.1</strong>（index digest <code>sha256:c874b4d8…5cbd3</code>；/api/health 实测 version=<code>v0.2.0-beta.6-rc.35.6-rc8.4.1</code>、git_commit=<code>ba089624</code>；#509 swap 工具执行，换版前 PG 备份 <code>mu-pre-rc841sw</code>+rc8.3 回滚锚 <code>4ed03fc9…c666</code> 就位）；rc.35.6-rc8.4 未部署（其内容已由 rc8.4.1 包含并取代）。此前本页「已于 2026-10-25 受控换版至 rc8.4」表述有误（且误引 rc8.1 digest），2026-10-26 已勘误。rc8 系列生产运维事实（#509 swap 工具、PG 备份+rc7/rc8 双回滚锚就位、真实浏览器 OAuth 登录验收（GitHub 两角色+Gitee maintainer）与连续 ≥60 分钟观察）在 rc8.3 及更早换版时实证；试用环境保持原状态未动。</p>
 <div class="table-wrap">
 <table>
 <caption>选择版本时应区分的三种对象</caption>

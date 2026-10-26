@@ -99,7 +99,7 @@ Beta 通道接口与配置项可能随版本调整；生产使用建议钉住 di
 </div>
 
 <h2 id="validation-status">验证范围</h2>
-<p>截至 2026-10-26，rc.35.6-rc8 系列已作为官方预发布发布；维护者生产实例当前运行 rc.35.6-rc8.3，rc.35.6-rc8.4 与安全修复版 rc.35.6-rc8.4.1（CVE-2026-111497 brotli 双面闭合：基础镜像 node 22.23.4 + brotli-libs 1.2.1-r0）均已发布但尚未部署；角色登录验收覆盖 platform_admin（GitHub）/maintainer（Gitee）/contributor（GitHub，含越权拒绝实证），auditor 等其余角色未做真实登录验收
+<p>截至 2026-10-26，rc.35.6-rc8 系列已作为官方预发布发布；维护者生产实例当前运行安全修复版 rc.35.6-rc8.4.1（CVE-2026-111497 brotli 双面闭合：基础镜像 node 22.23.4 + brotli-libs 1.2.1-r0；2026-10-26 受控换版）；rc.35.6-rc8.4 未部署（内容由 rc8.4.1 包含）；角色登录验收覆盖 platform_admin（GitHub）/maintainer（Gitee）/contributor（GitHub，含越权拒绝实证），auditor 等其余角色未做真实登录验收
 （换版 2026-10-18T12:37Z；T+1h 观察满窗通过——33 次采样全部 healthy、零重启、
 窗口内错误日志 0 行）；<strong>首位未参与开发的真实用户试用仍待验</strong>。
 演示夹具登录不等于 OAuth 接入验收，预置发现与补丁证据不等于真实模型产出或测试执行结果。</p>
