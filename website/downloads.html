@@ -63,7 +63,7 @@
 <h1>下载与校验（0.2.0-beta.6-rc.35.6-rc8 预发布）</h1>
 
 <h2 id="release-scope">发布与源码范围</h2>
-<p>截至 2026-10-25，本页官方制品对应 rc.35.6-rc8 / <code>a50f034b</code>。rc.35.6-rc8 是<strong>预发布</strong>。合入 main、隔离验收通过、发布到官方 registry 是三个不同状态。<strong>生产实例已于 2026-10-25 受控换版至 rc.35.6-rc8.4</strong>（index digest <code>sha256:5b46e315…20e6</code>；含 rc8 全部内容与「保护状态未知」恒显修复；#509 swap 工具、PG 备份+rc7/rc8 双回滚锚就位、真实浏览器 OAuth 登录验收（GitHub 两角色+Gitee maintainer）与连续 ≥60 分钟观察通过；试用环境保持原状态未动）。</p>
+<p>截至 2026-10-25，本页官方制品对应 rc.35.6-rc8 / <code>a50f034b</code>。rc.35.6-rc8 是<strong>预发布</strong>。合入 main、隔离验收通过、发布到官方 registry 是三个不同状态。<strong>生产状态（2026-10-26 勘误）：生产实例当前运行 rc.35.6-rc8.3</strong>（index digest <code>sha256:4ed03fc9…c666</code>；/api/health 实测 version=<code>v0.2.0-beta.6-rc.35.6-rc8.3</code>、git_commit=<code>fca1f7ba</code>）；<strong>rc.35.6-rc8.4 已发布（GHCR tag/Release 可下载，index <code>sha256:3b39acff…8f43</code>）但尚未部署</strong>——可下载制品与生产运行版本是两个不同状态。此前本页「已于 2026-10-25 受控换版至 rc8.4」表述有误（且误引 rc8.1 digest），特此更正。rc8 系列生产运维事实（#509 swap 工具、PG 备份+rc7/rc8 双回滚锚就位、真实浏览器 OAuth 登录验收（GitHub 两角色+Gitee maintainer）与连续 ≥60 分钟观察）在 rc8.3 及更早换版时实证；试用环境保持原状态未动。</p>
 <div class="table-wrap">
 <table>
 <caption>选择版本时应区分的三种对象</caption>
