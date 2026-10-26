@@ -170,7 +170,7 @@ test('审批：标题「审批票总览」与待处理区分；DRY_RUN 说明不
   const page = await renderRoute('/approvals');
   const ok = await page.waitFor(() => page.text().includes('审批票总览'));
   assert.ok(ok, '新标题缺失');
-  assert.ok(page.text().includes('不会写入 GitHub'), 'DRY_RUN 人话说明缺失');
+  assert.ok(page.text().includes('不向 GitHub 写入任何内容') || page.text().includes('不会向 GitHub 写入任何内容'), 'DRY_RUN 人话说明缺失');
   assert.ok(page.text().includes('前往「待处理」队列'), '队列跳转缺失');
   assert.ok(!page.text().includes('诚实零值'), '内部用语「诚实零值」不得出现在用户界面');
   await page.cleanup();
