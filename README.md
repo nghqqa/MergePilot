@@ -4,7 +4,7 @@
 
 [官网](https://docs.nghqqa.cn/) · [快速开始](https://docs.nghqqa.cn/quickstart.html) · [使用文档](https://docs.nghqqa.cn/docs.html) · [下载与校验](https://docs.nghqqa.cn/downloads.html)
 
-[![Release](https://img.shields.io/badge/Release-rc.35.6--rc8-0e6b62)](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8)
+[![Release](https://img.shields.io/github/v/release/nghqqa/MergePilot?label=Release&color=0e6b62)](https://github.com/nghqqa/MergePilot/releases/latest)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 MergePilot 接入你的仓库（GitHub App + Gitee 连接），把 PR 事件、审查发现（静态规则 +
@@ -12,8 +12,11 @@ LLM 第二阶段）、修复建议与验证证据汇集到你自己的 Console�
 「预览 → 确认」完成三类受控远端写：发布审查评论、**应用修复（机器人以自己的身份向 PR
 分支提交修复 commit，新 head 自动重审）**、**确认合并（统一资格门：当前 head 审查完成
 + 真实 CI 通过 + mergeable 已知，缺一不放行）**。系统不自动改代码、不自动合并、不设
-required check、不绕过平台保护。当前为 **Developer Beta（rc.35.6-rc8 口径）**，
-能力边界见[能力矩阵](docs/delivery/CAPABILITY-MATRIX.md)。维护者生产实例已受控换版至该版本（真实浏览器 OAuth 登录验收与连续观察通过；auditor 等其余角色的登录验收尚未执行）。
+required check、不绕过平台保护。当前版本 **rc.35.6-rc8.4.1（安全修复版）**，
+能力边界见[能力矩阵](docs/delivery/CAPABILITY-MATRIX.md)。维护者生产实例运行同一版本：
+GitHub/Gitee 真实浏览器 OAuth 登录验收覆盖 platform_admin / maintainer / contributor /
+auditor 四角色且服务端授权边界与角色矩阵逐项一致，换版后连续观察通过；审批/修复应用/合并
+等受控写与非空业务流量仍未做真实验收。
 
 ## 界面
 
@@ -40,6 +43,13 @@ PR 事件接入 → 审查发现 → 按策略进入修复与验证 → Console 
 - **团队协作**：GitHub OAuth + 邀请制登录、五角色 RBAC、应用层多租户隔离与审计。
 - **修复验证**：AgentTeams 执行器独立部署（`deploy/agentteams/qwenpaw-v124/install-agentteams-full.sh` 一键安装，console 侧经 `docker-compose.agentteams.yml` 声明式网络接线，重建免手工 connect）；未配置或不就绪时，该环节 fail-closed。
 - **可选知识库**：本地 RAG 检索团队规范，结果仅作为参考，不自动成为审查结论。
+
+## 项目维护状态
+
+项目自 2026-10-26 起处于**事件响应维护**（冻结功能开发）：`main` 仅接受安全补丁类 PR，
+现有 CI 门不变；上游 HIGH/CRITICAL CVE、GitHub/Gitee 平台行为变更、真实用户故障或明确
+业务需求触发时按[FROZEN.md](FROZEN.md)的路径响应。当前推荐自托管版本为
+[rc.35.6-rc8.4.1](https://github.com/nghqqa/MergePilot/releases/latest)。
 
 ## 开始使用
 
