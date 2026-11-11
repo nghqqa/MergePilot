@@ -27,6 +27,7 @@ import { ghAppConfig, listInstallationRepositories } from './ghapp.mjs';
 import { verifyWebhookSignature, readRawBody } from './webhookVerify.mjs';
 import { validateForgeEventV1, deriveDeliveryRef } from './forge/index.mjs';
 import { verifyGiteeWebhook, createGiteeAdapter } from './forge/gitee.mjs';
+import { validateGitHubLegacyPullRequestPayload } from './forge/github-legacy-contract.mjs';
 
 // pg 解析：容器/镜像内走标准 node_modules；CI/主机测试进程回退到 test/support
 // 安装的 dev-only pg（与 cchain/wiring.mjs loadPg 同一惯例——CI runner 无根 junction）。
@@ -1087,17 +1088,32 @@ export async function muApi(req, res, ctx) {
         }
       } else if (event === 'pull_request' && body.pull_request && body.repository) {
         const gid = Number(body.repository.id ?? 0);
+        // legacy 7 字段 payload（构造原样上提：预检与入队共用同一对象，杜绝两处漂移）
+        const payload = { event: 'pull_request', delivery_id: deliveryId,
+          installation_id: instId,
+          github_repo_id: gid,
+          pr_number: Number(body.pull_request.number ?? 0),
+          head_sha: String(body.pull_request.head?.sha ?? ''),
+          action: String(body.action ?? '') };
+        // PR-B 入队前契约预检：谓词逐字导出自消费侧 executeEventSync 闸（:302-306），
+        // 不加强不减弱（无 action 白名单/github_repo_id 闸）；次序对齐 Gitee 链——
+        // 形状预检先于 binding 反查，坏 payload 省一次 DB。
+        const pv = validateGitHubLegacyPullRequestPayload(payload);
+        if (!pv.ok) {
+          // 失败语义镜像 Gitee validateForgeEventV1 失败路径（:1197-1203 同款）：
+          // delivery 置 rejected 留痕 + 复用既有审计词 GHAPP_WEBHOOK_PROCESSED
+          // （detail.rejected=<field>，零新审计词）+ 200 {ok:true, rejected:<field>}。
+          await store.finishWebhookDelivery(deliveryId, 'rejected');
+          await store.audit('GHAPP_WEBHOOK_PROCESSED', { tenantId, actorUserId: null,
+            detail: { event, delivery_prefix: deliveryId.slice(0, 8), installation_id: instId,
+              rejected: pv.field } });
+          return sendJson(res, 200, { ok: true, rejected: pv.field });
+        }
         const hit = await muPoolQ(`SELECT repo_id FROM mu.repository_binding WHERE github_repo_id=$1 AND tenant_id=$2 AND binding_state='active'`, [gid, tenantId]);
         if (hit.rows.length) {
           // 入队前完成 tenant/repo 解析；异步 worker 执行时复查 binding/installation/membership
           await store.enqueueJob({ tenantId, repoId: hit.rows[0].repo_id,
-            kind: 'event_sync', requestedBy: null, requestedRole: 'maintainer',
-            payload: { event: 'pull_request', delivery_id: deliveryId,
-              installation_id: instId,
-              github_repo_id: gid,
-              pr_number: Number(body.pull_request.number ?? 0),
-              head_sha: String(body.pull_request.head?.sha ?? ''),
-              action: String(body.action ?? '') } });
+            kind: 'event_sync', requestedBy: null, requestedRole: 'maintainer', payload });
         }
       }
       await store.finishWebhookDelivery(deliveryId, 'processed');

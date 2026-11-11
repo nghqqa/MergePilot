@@ -253,6 +253,50 @@ try {
   ok('GA5f 未知 installation 事件被忽略（200 ignored）',
     (await hook('pull_request', { installation: { id: 31337 }, repository: { id: 1 }, action: 'opened', pull_request: { number: 1, head: { sha: 'a' } } })).status === 200);
 
+  // ── PR-B 入队前契约预检（feat/webhook-precheck-github）：坏 payload 不入队 ──
+  // 负例字段=消费侧 api.mjs:302-306 谓词逐字导出（pr_number falsy / head_sha 非
+  // 6-40 hex）；失败语义镜像 Gitee validateForgeEventV1 失败路径：delivery 置
+  // rejected + 200 {ok:true, rejected:<field>}；预检先于 binding 反查 → 零 mu.job。
+  {
+    const badPrRes = await hook('pull_request',
+      { installation: { id: 7001 }, repository: { id: 9001 }, action: 'opened',
+        pull_request: { head: { sha: 'ab'.repeat(20) } } }, // 缺 number → 构造 pr_number=0
+      { delivery: 'd-pc-1' });
+    const badPrJson = await badPrRes.json().catch(() => null);
+    ok('GA5g 缺 pr_number → 200 rejected=pr_number + delivery rejected + 零 mu.job',
+      badPrRes.status === 200 && badPrJson?.ok === true && badPrJson?.rejected === 'pr_number'
+        && (await pool.query(`SELECT state FROM mu.webhook_delivery WHERE delivery_id='d-pc-1'`)).rows[0]?.state === 'rejected'
+        && (await pool.query(`SELECT count(*)::int n FROM mu.job WHERE payload->>'delivery_id'='d-pc-1'`)).rows[0].n === 0,
+      { status: badPrRes.status, json: badPrJson,
+        delivery: (await pool.query(`SELECT state FROM mu.webhook_delivery WHERE delivery_id='d-pc-1'`)).rows[0],
+        jobs: (await pool.query(`SELECT count(*)::int n FROM mu.job WHERE payload->>'delivery_id'='d-pc-1'`)).rows[0].n });
+    const badShaRes = await hook('pull_request',
+      { installation: { id: 7001 }, repository: { id: 9001 }, action: 'opened',
+        pull_request: { number: 42, head: { sha: 'zz-not-hex' } } }, // 非 6-40 hex → 消费侧同拒
+      { delivery: 'd-pc-2' });
+    const badShaJson = await badShaRes.json().catch(() => null);
+    ok('GA5h head_sha 非 hex → 200 rejected=head_sha + delivery rejected + 零 mu.job',
+      badShaRes.status === 200 && badShaJson?.rejected === 'head_sha'
+        && (await pool.query(`SELECT state FROM mu.webhook_delivery WHERE delivery_id='d-pc-2'`)).rows[0]?.state === 'rejected'
+        && (await pool.query(`SELECT count(*)::int n FROM mu.job WHERE payload->>'delivery_id'='d-pc-2'`)).rows[0].n === 0,
+      { status: badShaRes.status, json: badShaJson });
+    const pcAudit = (await pool.query(
+      `SELECT count(*)::int n FROM mu.audit_event WHERE kind='GHAPP_WEBHOOK_PROCESSED'
+        AND (detail->>'rejected') IN ('pr_number','head_sha')`)).rows[0].n;
+    ok('GA5i 预检拒绝审计在案（复用 GHAPP_WEBHOOK_PROCESSED，detail.rejected=<field>，零新审计词）',
+      pcAudit >= 2, { pcAudit });
+    // 对照：同分支合法 payload 不受预检影响（负例不污染入队路径）
+    const ctrlRes = await hook('pull_request',
+      { installation: { id: 7001 }, repository: { id: 9001 }, action: 'opened',
+        pull_request: { number: 48, head: { sha: '1a'.repeat(20) } } }, { delivery: 'd-pc-3' });
+    const ctrlJson = await ctrlRes.json().catch(() => null);
+    ok('GA5j 对照：合法 payload 照常入队（processed + 恰一 mu.job）',
+      ctrlRes.status === 200 && ctrlJson?.ok === true && ctrlJson?.rejected === undefined
+        && (await pool.query(`SELECT state FROM mu.webhook_delivery WHERE delivery_id='d-pc-3'`)).rows[0]?.state === 'processed'
+        && (await pool.query(`SELECT count(*)::int n FROM mu.job WHERE payload->>'delivery_id'='d-pc-3'`)).rows[0].n === 1,
+      { status: ctrlRes.status, json: ctrlJson });
+  }
+
   // ── GA-6 生命周期事件：suspend/revoked/repository_removed ──
   await hook('installation', { action: 'suspend', installation: { id: 7001 } }, { delivery: 'd-s-1' });
   ok('GA6 installation suspend → installation.suspended_at 非空 + 相关 binding suspended',
