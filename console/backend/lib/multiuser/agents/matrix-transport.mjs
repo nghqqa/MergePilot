@@ -35,6 +35,9 @@ import crypto from 'node:crypto';
 let cachedLogin = null; // { baseUrl, user, pwTag, token } —— 模块级；换配置（含凭据轮换）即失效
 export function __resetMatrixLoginForTests() { cachedLogin = null; }
 export function __cachedTokenForTests() { return cachedLogin?.token ?? null; }
+// PR-A：/sync 401 场景由 matrix-sync-listener 调用——清除缓存 token，下次调用强制重登
+//（与 sendTaskDelegation 内部 401 清缓存同语义；不改变 login/collectReply 行为）。
+export function invalidateMatrixLogin() { cachedLogin = null; }
 // 请求级超时（P1 修复 2026-09-29，标准升级 2026-09-29b）：
 //  * AbortController 真取消（真 fetch 响应 signal——连接资源被释放，不留后台请求）；
 //  * race 兜底（注入的 fetchImpl 可能不尊重 signal——超时同样返回，不悬挂）；

@@ -12,6 +12,7 @@ import { retryClaim, finishAttemptOrSkip, advanceAfterVerify, MAX_FIX_ROUNDS } f
 import { fixerDryRun, verifierVerify, isForbiddenFixZone } from './fxv-adapter.mjs';
 import { fetchPrContext } from '../ghprovider.mjs';
 import * as mt from './matrix-transport.mjs';
+import * as msl from './matrix-sync-listener.mjs';
 import { parseDiff } from '../reviewer-rules.mjs';
 
 // 每类 finding 的确定性修复规则（pattern=原始行文本；replacement=安全占位改写）
@@ -324,6 +325,11 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps, gateFi
   const mtFetch = deps.mtFetch ?? fetch;
   const mtSleep = deps.mtSleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   const mtTimeout = Number(deps.mtRoleTimeoutMs) || mt.MT_LIMITS.defaultRoleTimeoutMs;
+  // PR-A：waiter 超时后的 collectReply 有界对账窗（15-30s 带内，默认 20s；deps.mtSweepMs
+  // 仅供测试收窄）。listener unhealthy（含未启动）不走 waiter——直接现行 collectReply
+  // 全 deadline 路径（现行纯轮询逐字节保留，stub-only 测试零回归）。sweep 无果仍走
+  // 现行 MT_REPLY_TIMEOUT 语义（重试/死信/BLOCKED），fail-closed 不变。
+  const sweepMs = Math.max(1_000, Number(deps.mtSweepMs) || msl.MSL_LIMITS.sweepMs);
   const env = deps.env ?? process.env;
 
   const gateAudit = async (kind, detail) => {
@@ -477,15 +483,52 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps, gateFi
         idempotencyKey: `atr:${runId}:${rp.taskId}:${attemptNo}`,
         inputDigest: atMod.atDigest(brief) });
       if (!roundEvt.ok) { lastReason = roundEvt.code; break; }
+      // ── PR-A：/sync 事件流推送优先，collectReply 有界 sweep 兜底（现行语义零回归）──
+      // waiter 先注册后派发（marker 唯一绑定 submissionId；时间窗取发送前地板，与
+      // collectReply 的 sent.ts-markerGuardMs 等价——先挂监听再发，事件早到也能结算）。
+      // listener unhealthy（含未启动，stub-only 场景）→ 立即短路 → 退化为现行纯轮询路径。
+      const marker = `[mp:${submissionId}]`;
+      const listener = deps.syncListener ?? msl;
+      const useWaiter = typeof listener?.registerReplyWaiter === 'function'
+        && typeof listener?.isMatrixSyncListenerHealthy === 'function'
+        && listener.isMatrixSyncListenerHealthy();
+      const waiter = useWaiter
+        ? listener.registerReplyWaiter({ roomId: bindings[role].roomID,
+          expectedSender: bindings[role].matrixUserID, marker,
+          sinceTs: Date.now() - mt.MT_LIMITS.markerGuardMs, timeoutMs: mtTimeout })
+        : null;
       const sent = await mt.sendTaskDelegation(mtCfg, { room: bindings[role].roomID,
         workerMatrixId: bindings[role].matrixUserID, taskId: rp.taskId, correlationId: runId,
         submissionId, role, brief: rp.ask(brief, results), fetchImpl: mtFetch });
-      if (!sent.ok) { lastReason = sent.reason; break; }
+      if (!sent.ok) {
+        if (waiter) waiter.cancel();
+        lastReason = sent.reason; break;
+      }
 
-      const got = await mt.collectReply(mtCfg, { room: bindings[role].roomID,
-        expectedSender: bindings[role].matrixUserID, marker: `[mp:${submissionId}]`,
-        sinceTs: sent.ts - mt.MT_LIMITS.markerGuardMs, timeoutMs: mtTimeout,
-        fetchImpl: mtFetch, sleepImpl: mtSleep });
+      let got;
+      if (waiter) {
+        // waiter 自带 mtTimeout 硬顶且恒 resolve 不 reject；race 兜底纯防悬挂（防御性）。
+        let guardTimer = null;
+        const res = await Promise.race([
+          waiter.promise,
+          new Promise((res2) => {
+            guardTimer = setTimeout(() => res2({ ok: false, reason: 'MSL_RACE_GUARD' }), mtTimeout + 5_000);
+            if (typeof guardTimer.unref === 'function') guardTimer.unref();
+          }),
+        ]).finally(() => { if (guardTimer) clearTimeout(guardTimer); });
+        got = res?.ok
+          ? { ok: true, json: res.event.json, raw: String(res.event.body).slice(0, mt.MT_LIMITS.maxBodyChars),
+            ts: res.event.originServerTs }
+          : await mt.collectReply(mtCfg, { room: bindings[role].roomID,
+            expectedSender: bindings[role].matrixUserID, marker,
+            sinceTs: sent.ts - mt.MT_LIMITS.markerGuardMs, timeoutMs: sweepMs,
+            fetchImpl: mtFetch, sleepImpl: mtSleep });
+      } else {
+        got = await mt.collectReply(mtCfg, { room: bindings[role].roomID,
+          expectedSender: bindings[role].matrixUserID, marker,
+          sinceTs: sent.ts - mt.MT_LIMITS.markerGuardMs, timeoutMs: mtTimeout,
+          fetchImpl: mtFetch, sleepImpl: mtSleep });
+      }
       if (got.ok) {
         let candidate = got.json;
         let v = atMod.validateAgentTeamsOutput(rp.schema, candidate);
