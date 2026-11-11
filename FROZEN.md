@@ -1,17 +1,17 @@
 # FROZEN — 项目冻结与事件响应维护状态
 
-> 状态：**受控开发（范围限定解冻 / scope-limited unfreeze）**，自 2026-11-11 起。
-> 解冻范围**仅限**本次计划内三项：PR-0（本文件解冻落档）、PR-A（Matrix 事件投递）、PR-B（webhook GitHub 预检）。
-> **终态条款**：三项全部合入 main 且组合回归全绿后，**默认回归「事件响应维护」态**（恢复本文件 2026-10-26 版冻结规则，无需另行审批）；范围外功能 PR 仍一律不受理。
+> 状态：**事件响应维护**（2026-11-11 起——按终态条款自动回归：解冻轮三项 PR-0/#545、PR-A/#546、PR-B/#547 已全部合入且组合回归全绿、隔离验收通过，见 §6 台账与 Release v0.2.0-beta.6-rc.35.6-rc8.5）。
+> 2026-11-11 解冻轮已完成并关闭；冻结规则（2026-10-26 版）恢复生效。
 > 本文件是冻结状态的唯一权威说明；与本文冲突的旧文档段落以本文为准。
 
 ## 1. 当前事实基线（2026-10-26 核对；2026-11-11 解冻复核 main/Latest/Docker 态）
 
 | 项 | 值 | 状态 |
 |---|---|---|
-| main 分支 | `6272649`（PR#544 docs/readme-refresh） | 已发布基线的祖先链 |
+| main 分支 | `3879e39`（PR#547 feat/matrix-event-delivery，含 PR#546 webhook 预检；2026-11-11 解冻轮产物） | 已发布基线的祖先链 |
 | rc8.4.1 tag | `v0.2.0-beta.6-rc.35.6-rc8.4.1` → commit `ba089624e266f7aa14dda3f45285a3232b7f5938` | **已发布 + Latest**（GHCR + GitHub Release + 离线包；2026-11-11 API 复核 ✓） |
-| 生产 console | 镜像 `sha256:c874b4d88ef6…5cbd3`（= rc8.4.1 index），容器 `beta-mp-console` | **已部署**；计划内停止（2026-11-11 复核：Docker Desktop 整体未运行，容器态不可见；数据在卷，恢复 = 启动 Docker Desktop → `deploy/mergepilot-stack/start-prod.ps1`） |
+| 生产 console | 镜像 `sha256:c874b4d88ef6…5cbd3`（= rc8.4.1 index），容器 `beta-mp-console` | **已部署**（= rc8.4.1）；计划内停止（2026-11-11 晚复核：Docker Desktop 已再次停止，恢复 = 启动 Docker Desktop → `deploy/mergepilot-stack/start-prod.ps1`；恢复后是否换版 rc8.5 另行授权） |
+| rc8.5 release | `v0.2.0-beta.6-rc.35.6-rc8.5` → commit `3879e390`；镜像 OCI index `sha256:f8bc369f…afe9a`（amd64 `91b30216…1438`） | **已发布 + Latest**（2026-11-11；trivy 全零 / secrets=0 / SBOM 48 / 隔离栈三轮四角色全链 COMPLETED，证据=evidence-rc85-dev1/EVIDENCE.md） |
 | 安全姿态 | trivy 漏洞全零 / secrets=0；基础镜像 CVE-2026-111497（brotli）已双面闭合（node 22.23.4 + brotli-libs 1.2.1-r0） | 已验收 |
 | 登录与权限 | A/B/C/D 四角色真实 OAuth（GitHub platform_admin/contributor、Gitee maintainer/auditor）+ 服务端授权边界逐项实测，全部与 `authz.mjs` 一致 | 已验收 |
 | 观察窗 | rc8.4.1 换版后 T+1h：22/22 有效样本全绿、restarts=0、错误日志 0 行 | 已通过 |
@@ -30,7 +30,7 @@ Gitee OAuth 复验仅覆盖 maintainer 一路径；审批/修复/合并等受控
 
 ## 3. 冻结规则
 
-1. `main` 在解冻窗口内只接受**安全补丁类 PR**（上游 CVE 闭合、依赖安全修复）与**状态行所列解冻范围 PR**（PR-0/A/B）；其余功能 PR 一律不受理。
+1. `main` 只接受**安全补丁类 PR**（上游 CVE 闭合、依赖安全修复）；其余功能 PR 一律不受理（新功能走 §4「明确业务需求」路径另行解冻评估）。
 2. 现有 CI 门（console backend + frontend gate、selftest、secret-scan 等）**不变、不减、不跳过**。
 3. 任何补丁版发布沿用既有流程：干净检出 → buildx → GHCR → Release（附离线包/SBOM/扫描/SHA256SUMS）→ 生产换版**另行单独授权**。
 4. 不新增月度/定时自动化任务；巡检为手动事件（见 §5）。
@@ -67,6 +67,9 @@ Gitee OAuth 复验仅覆盖 maintainer 一路径；审批/修复/合并等受控
 | 4 | `r3work\rc841-release`（官方发布构建用 git worktree，干净） | 待 `git worktree remove` 正规移除 |
 | 5 | MIMOSA 工具快照（.mimosa hook-state，数千文件含历史文件副本） | 待整体归档/删除决策 |
 | 6 | `r3work-archive\`（7.82GB，223 项已归档波次） | 待外置/加密/保留策略 |
+| 7 | Windows 引擎 3 个 2026-11-11 匿名卷（解冻波开发代理集成测试遗留，PG16 数据目录，零引用，~150MB） | 待删除授权 |
+| 8 | WSL 引擎解冻残留：`rc8.5-dev1` 本地镜像（188MB）+ atiso 栈隔离 PG 卷内 3 条 run 测试数据 | 待下次 WSL 引擎维护时清理 |
+| 9 | rc8.5 弱证据补强：幂等/多房间串扰缺活体实证（单测已覆盖）、游标续传缺事件数对账、一条 `2\|reviewer\|DONE` trace 含义未查明 | 待真实流量试点时顺带补强 |
 
 > 台账纪律：以上任何一项执行时**重新做该项目的删前/移前核对**（引用、哈希、保护集），
 > 不依赖本表过期信息。
