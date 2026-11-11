@@ -64,12 +64,12 @@
 <p>本页面向部署者。需要 Docker 与 Docker Compose v2、Git、Node.js ≥ 20（运行预检脚本），
 以及 GitHub App、OAuth App 和对应配置。耗时取决于凭据与网络入口准备情况。
 已有实例的受邀成员请读<a href="user-guide.html">首次使用</a>。</p>
-<p>以下步骤固定到当前推荐自托管版本 <strong>rc.35.6-rc8.4.1（安全修复版）</strong>
+<p>以下步骤固定到当前推荐自托管版本 <strong>rc.35.6-rc8.5（事件投递+入口预检版）</strong>
 （源码 <code>ba089624</code>；镜像 OCI index
-<code>sha256:c874b4d88ef67387401caf5b04d94ee9d4aa2fd9c6254301fc167a9d5505cbd3</code>），
+<code>sha256:f8bc369f5b046536103d75ba53c4863871abb3ecddbdfe920baf29c6428afe9a</code>），
 完整校验与供应链档案见
 <a href="downloads.html#release-scope">下载与校验</a>与
-<a href="https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8.4.1">该版 Release</a>。</p>
+<a href="https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8.5">该版 Release</a>。</p>
 
 <div class="warn">先读·这是什么形态：MergePilot 是<strong>用户自托管</strong>产品——
 Console、数据库、OAuth 配置与业务数据全部运行在<strong>部署者自己的环境</strong>中。
@@ -86,7 +86,7 @@ Console 或公网入口。详见 <a href="multitenant-webhook.html">多租户与
 
 <h2>1. 获取源码与模板</h2>
 <pre><code>git clone https://github.com/nghqqa/MergePilot.git
-cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.35.6-rc8.4.1
+cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.35.6-rc8.5
 cd deploy/selfhost
 cp .env.example .env &amp;&amp; chmod 600 .env</code></pre>
 
@@ -114,9 +114,9 @@ node preflight.mjs --live             # 启动后活体探测
 curl http://127.0.0.1:48500/api/health</code></pre>
 <p><strong>健康门判据</strong>：<code>ok: true</code>、<code>data_mode: live</code>、
 <code>mu_schema_ready: true</code>、
-<code>version: v0.2.0-beta.6-rc.35.6-rc8.4.1</code>——四项齐了才算装好。
+<code>version: v0.2.0-beta.6-rc.35.6-rc8.5</code>——四项齐了才算装好。
 （可选）镜像一致性核对：<code>docker buildx imagetools inspect
-ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc8.4.1</code> 的 Digest 行
+ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc8.5</code> 的 Digest 行
 应等于上方 index digest。</p>
 
 <h2>4. 首任管理员登录，再邀请成员</h2>
@@ -138,7 +138,7 @@ ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc8.4.1</code> 的 Diges
 <p>下卡为同一安装流程的「AI 可执行版」：包含全部命令、每步成功判据与硬性边界。
 整段复制给你的 AI 编码助手即可；它失败时会向你要报错输出。</p>
 <details>
-<summary><strong>点开复制：MergePilot 自托管 AI 安装指令卡（rc.35.6-rc8.4.1）</strong></summary>
+<summary><strong>点开复制：MergePilot 自托管 AI 安装指令卡（rc.35.6-rc8.5）</strong></summary>
 <pre><code>你是用户的部署助手。请带用户完成 MergePilot（自托管多用户 PR 审查工作台）的安装。
 严格按步骤执行；每步完成后向用户索取校验输出，确认通过再进入下一步；任何一步失败就停下，
 让用户把完整错误输出贴回给你分析，不要猜测性修复。
@@ -153,10 +153,10 @@ ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc8.4.1</code> 的 Diges
 
 第 1 步 取模板：
   git clone https://github.com/nghqqa/MergePilot.git
-  cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.35.6-rc8.4.1
+  cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.35.6-rc8.5
   cd deploy/selfhost
   cp .env.example .env &amp;&amp; chmod 600 .env
-判据：checkout 指向 tag v0.2.0-beta.6-rc.35.6-rc8.4.1；.env 存在。
+判据：checkout 指向 tag v0.2.0-beta.6-rc.35.6-rc8.5；.env 存在。
 
 第 2 步 填最小必填集（审查接入可后补）：编辑 .env 至少设置——
   POSTGRES_PASSWORD=&lt;第0步口令&gt;
@@ -171,9 +171,9 @@ ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc8.4.1</code> 的 Diges
   docker compose ps                         （console 与 postgres 应 running/healthy）
   curl -s http://127.0.0.1:48500/api/health
 判据（全部满足才算过）：&quot;ok&quot;: true、&quot;data_mode&quot;: &quot;live&quot;、&quot;mu_schema_ready&quot;: true、
-&quot;version&quot;: &quot;v0.2.0-beta.6-rc.35.6-rc8.4.1&quot;。首次启动自动建库建表，无需手工 SQL。
-（可选）镜像一致性：docker buildx imagetools inspect ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc8.4.1
-的 Digest 行应等于 sha256:c874b4d88ef67387401caf5b04d94ee9d4aa2fd9c6254301fc167a9d5505cbd3。
+&quot;version&quot;: &quot;v0.2.0-beta.6-rc.35.6-rc8.5&quot;。首次启动自动建库建表，无需手工 SQL。
+（可选）镜像一致性：docker buildx imagetools inspect ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc8.5
+的 Digest 行应等于 sha256:f8bc369f5b046536103d75ba53c4863871abb3ecddbdfe920baf29c6428afe9a。
 
 第 4 步 首次登录（用户本人操作，AI 不得代输凭据）：
 浏览器打开 http://127.0.0.1:48500/login → 「使用 GitHub 登录」→ 必须用第 2 步绑定的同一 GitHub 账号。
@@ -205,6 +205,6 @@ ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc8.4.1</code> 的 Diges
 <a href="https://github.com/nghqqa/MergePilot/blob/main/deploy/selfhost/README.md">仓库内完整部署指南</a>。</p>
 </article>
 </main>
-<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.6-rc8.4.1（预发布·安全修复版） · Apache-2.0</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.6-rc8.5（预发布·安全修复版） · Apache-2.0</footer>
 </body>
 </html>
