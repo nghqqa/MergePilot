@@ -1,15 +1,17 @@
 # FROZEN — 项目冻结与事件响应维护状态
 
-> 状态：**事件响应维护（frozen / event-driven maintenance）**，自 2026-10-26 起。
+> 状态：**受控开发（范围限定解冻 / scope-limited unfreeze）**，自 2026-11-11 起。
+> 解冻范围**仅限**本次计划内三项：PR-0（本文件解冻落档）、PR-A（Matrix 事件投递）、PR-B（webhook GitHub 预检）。
+> **终态条款**：三项全部合入 main 且组合回归全绿后，**默认回归「事件响应维护」态**（恢复本文件 2026-10-26 版冻结规则，无需另行审批）；范围外功能 PR 仍一律不受理。
 > 本文件是冻结状态的唯一权威说明；与本文冲突的旧文档段落以本文为准。
 
-## 1. 当前事实基线（2026-10-26 核对）
+## 1. 当前事实基线（2026-10-26 核对；2026-11-11 解冻复核 main/Latest/Docker 态）
 
 | 项 | 值 | 状态 |
 |---|---|---|
-| main 分支 | `ff71273`（以 main 最新为准） | 已发布基线的祖先链 |
-| rc8.4.1 tag | `v0.2.0-beta.6-rc.35.6-rc8.4.1` → commit `ba089624e266f7aa14dda3f45285a3232b7f5938` | **已发布**（GHCR + GitHub Release + 离线包） |
-| 生产 console | 镜像 `sha256:c874b4d88ef6…5cbd3`（= rc8.4.1 index），容器 `beta-mp-console` | **已部署**；容器当前处于**计划内停止**状态（数据在卷，`deploy/mergepilot-stack/start-prod.ps1` 一键恢复），restarts=0 |
+| main 分支 | `6272649`（PR#544 docs/readme-refresh） | 已发布基线的祖先链 |
+| rc8.4.1 tag | `v0.2.0-beta.6-rc.35.6-rc8.4.1` → commit `ba089624e266f7aa14dda3f45285a3232b7f5938` | **已发布 + Latest**（GHCR + GitHub Release + 离线包；2026-11-11 API 复核 ✓） |
+| 生产 console | 镜像 `sha256:c874b4d88ef6…5cbd3`（= rc8.4.1 index），容器 `beta-mp-console` | **已部署**；计划内停止（2026-11-11 复核：Docker Desktop 整体未运行，容器态不可见；数据在卷，恢复 = 启动 Docker Desktop → `deploy/mergepilot-stack/start-prod.ps1`） |
 | 安全姿态 | trivy 漏洞全零 / secrets=0；基础镜像 CVE-2026-111497（brotli）已双面闭合（node 22.23.4 + brotli-libs 1.2.1-r0） | 已验收 |
 | 登录与权限 | A/B/C/D 四角色真实 OAuth（GitHub platform_admin/contributor、Gitee maintainer/auditor）+ 服务端授权边界逐项实测，全部与 `authz.mjs` 一致 | 已验收 |
 | 观察窗 | rc8.4.1 换版后 T+1h：22/22 有效样本全绿、restarts=0、错误日志 0 行 | 已通过 |
@@ -28,7 +30,7 @@ Gitee OAuth 复验仅覆盖 maintainer 一路径；审批/修复/合并等受控
 
 ## 3. 冻结规则
 
-1. `main` **只接受安全补丁类 PR**（上游 CVE 闭合、依赖安全修复）；功能 PR 一律不受理。
+1. `main` 在解冻窗口内只接受**安全补丁类 PR**（上游 CVE 闭合、依赖安全修复）与**状态行所列解冻范围 PR**（PR-0/A/B）；其余功能 PR 一律不受理。
 2. 现有 CI 门（console backend + frontend gate、selftest、secret-scan 等）**不变、不减、不跳过**。
 3. 任何补丁版发布沿用既有流程：干净检出 → buildx → GHCR → Release（附离线包/SBOM/扫描/SHA256SUMS）→ 生产换版**另行单独授权**。
 4. 不新增月度/定时自动化任务；巡检为手动事件（见 §5）。
