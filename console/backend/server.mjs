@@ -898,6 +898,17 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
         });
       }).catch((e) => console.error('[mu:consumer] start failed:', String(e?.message ?? e).slice(0, 120)));
     }
+
+    // PR-A：Matrix /sync 事件流监听（worker→console 结果回传推送通道）。仅当 Matrix
+    // env 配置齐才启动；启动失败/循环错误只记日志绝不 crash server——健康标志供
+    // fix-orchestrator 回落 collectReply 纯轮询（unhealthy 立即短路，fail-closed 零回归）。
+    if (!globalThis.__MU_MATRIX_SYNC_LISTENER_STARTED) {
+      globalThis.__MU_MATRIX_SYNC_LISTENER_STARTED = true;
+      import('./lib/multiuser/agents/matrix-sync-listener.mjs').then((msl) => {
+        const r = msl.startMatrixSyncListenerFromEnv(process.env);
+        console.log(`[mu:matrix-sync] ${r.ok ? 'listener started' : `not started (${r.reason})`}`);
+      }).catch((e) => console.error('[mu:matrix-sync] start failed:', String(e?.message ?? e).slice(0, 120)));
+    }
   }
 
   // 验收期诊断（MU_QUERY_TRACE=<path> 启用）：全进程 pg 查询表名+调用点（无参数/无文本）。

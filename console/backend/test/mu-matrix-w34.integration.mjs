@@ -3,9 +3,14 @@
 // 覆盖：配置门 fail-closed/信封结构（taskId+correlationId+submissionId+role）/登录与 401 重登/
 // 发送幂等（txnId 稳定）/四重绑定收集（room/sender/时间窗/marker）/重放与过期拒绝/错误 sender 拒绝/
 // schema 无效重试/管线级：Matrix 缺配置 gate 拒、首条丢失重试成功、verifier FAIL→REWORK、
-// 两轮无效→死信+BLOCKED、cancel 真实调用、审计摘要、零泄漏。
+// 两轮无效→死信+BLOCKED、cancel 真实调用、审计摘要、零泄漏；
+// PR-A：P11 listener 未启动→现行纯轮询路径零回归（迟到消息 deadline 窗内命中）/
+// P12 /sync 推送直达（四角色 waiter 即时结算、全程零 /messages 轮询）/P13 waiter 超时→
+// collectReply 有界 sweep 命中既有回复（推送缺席由 sweep 兜住）。
 import { execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -13,6 +18,7 @@ import { createRequire } from 'node:module';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const { Pool } = createRequire(path.join(HERE, 'support/noop.js'))('pg');
 const mt = await import('../lib/multiuser/agents/matrix-transport.mjs');
+const msl = await import('../lib/multiuser/agents/matrix-sync-listener.mjs');
 const at = await import('../lib/multiuser/agents/agentteams-executor.mjs');
 const { createMuStore } = await import('../lib/multiuser/store.mjs');
 const orch = await import('../lib/multiuser/orchestration.mjs');
@@ -375,6 +381,117 @@ try {
     }
   }
   ok('P7 凭据/信封/原始 secret 全库零泄漏', leaks.length === 0, leaks.slice(0, 3));
+
+  // ── PR-A：/sync 事件流推送通道与 collectReply 兜底（P11 未启动零回归 / P12 推送直达 / P13 waiter 超时回落）──
+
+  // P11：listener 未启动（unhealthy，stub-only 生产形态）→ orchestrator 立即短路不走
+  // waiter → 现行 collectReply 纯轮询路径逐字节保留——消息"迟到"（前若干次读为空）也
+  // 在 deadline 窗内命中，轮次零回归完成。
+  msl.__resetMatrixSyncListenerForTests();
+  mt.__resetMatrixLoginForTests();
+  {
+    ok('P11 前置：listener 未启动=unhealthy', msl.isMatrixSyncListenerHealthy() === false);
+    const s11 = await mkScenario(311, 'f11');
+    const inner11 = mkMatrixApi();
+    let emptyReads = 0;
+    const lateMtx = async (url, opts = {}) => {
+      if (url.includes('/messages?') && emptyReads < 12) {
+        emptyReads++;
+        return { status: 200, ok: true, json: async () => ({ chunk: [] }) };
+      }
+      return inner11(url, opts);
+    };
+    const r11 = await fxo.fixVerifyRound(pool, { run: s11.run, binding: s11.binding,
+      deps: { ...depsBase(lateMtx), mtSleep: (ms) => new Promise((r) => setTimeout(r, 20)) } });
+    const run11 = await orch.getRun(pool, s11.run.run_id);
+    ok('P11a listener 未启动 → 现行纯轮询路径，迟到消息在 deadline 窗内命中（轮次完成）',
+      r11.ok === true && r11.executor === 'agentteams' && run11.status === 'COMPLETED', r11);
+    ok('P11b 迟到语义：前 12 次读为空后命中（纯轮询持续对账）', emptyReads >= 12, { emptyReads });
+  }
+
+  // P12/P13：listener 健康形态（stub /sync 流；独占 cursor 目录，finally 强制清理）。
+  const dirSync = fs.mkdtempSync(path.join(os.tmpdir(), 'w34-sync-'));
+  try {
+    // P12：/sync 推送直达——四角色 waiter 由事件流即时结算，全程零 /messages 轮询。
+    // stub 重投递语义=at-least-once：未匹配事件不记 LRU，持续重投直至对应 waiter 注册。
+    mt.__resetMatrixLoginForTests();
+    const s12 = await mkScenario(312, 'a12');
+    const ROLE_TASK = { reviewer: 't-review', leader: 't-leader', fixer: 't-fix', verifier: 't-verify' };
+    const pending12 = Object.keys(ROLE_TASK).map((role) => ({
+      role, eventId: '$sync-' + role,
+      body: `[mp:${s12.run.run_id}:${ROLE_TASK[role]}:1] ${JSON.stringify(REPLY[role])}`,
+    }));
+    const syncStub12 = async (url) => {
+      if (url.includes('/login')) return { status: 200, ok: true, json: async () => ({ access_token: 'tok12' }) };
+      if (url.includes('/sync?')) {
+        const since = new URL(url).searchParams.get('since');
+        if (!since) return { status: 200, ok: true, json: async () => ({ next_batch: 'S1', rooms: { join: {} } }) };
+        const joins = {};
+        for (const p of pending12) {
+          (joins[ROOMS[p.role]] ??= { timeline: { events: [] } }).timeline.events.push({
+            type: 'm.room.message', event_id: p.eventId, sender: SENDERS[p.role],
+            origin_server_ts: Date.now(), content: { body: p.body } });
+        }
+        return { status: 200, ok: true, json: async () => ({ next_batch: 'S2', rooms: { join: joins } }) };
+      }
+      return { status: 404, ok: false };
+    };
+    const st12 = msl.startMatrixSyncListener({ cfg: mt.resolveMatrixConfig(MT_ENV),
+      fetchImpl: syncStub12, cursorPath: path.join(dirSync, 'c12.json'), idleMs: 5 });
+    ok('P12a listener 启动（/sync 流健康）', st12.ok === true && msl.isMatrixSyncListenerHealthy() === true);
+    let messagesCalls12 = 0;
+    const base12 = mkMatrixApi();
+    const mtFetch12 = async (url, opts = {}) => {
+      if (url.includes('/messages?')) messagesCalls12++;
+      return base12(url, opts);
+    };
+    const r12 = await fxo.fixVerifyRound(pool, { run: s12.run, binding: s12.binding,
+      deps: { ...depsBase(mtFetch12) } });
+    const run12 = await orch.getRun(pool, s12.run.run_id);
+    ok('P12b /sync 推送直达：四角色轮次完成且全程零 /messages 轮询',
+      r12.ok === true && r12.executor === 'agentteams' && run12.status === 'COMPLETED' && messagesCalls12 === 0,
+      { r: r12, msgs: messagesCalls12 });
+    ok('P12c 恰好四次结算（重放双投递不双结算）', msl.matrixSyncListenerState().settled === 4,
+      msl.matrixSyncListenerState());
+    await msl.stopMatrixSyncListener();
+    msl.__resetMatrixSyncListenerForTests();
+    mt.__resetMatrixLoginForTests();
+
+    // P13：listener 健康但 /sync 流永不投递（空批原位驻留）→ 每角色 waiter 至 mtTimeout
+    // 超时 → 回落 collectReply 有界 sweep（20s 窗，首次轮询即命中既有回复）→ 轮次零回归完成。
+    mt.__resetMatrixLoginForTests();
+    const s13 = await mkScenario(313, 'b13');
+    const syncStub13 = async (url) => {
+      if (url.includes('/login')) return { status: 200, ok: true, json: async () => ({ access_token: 'tok13' }) };
+      if (url.includes('/sync?')) {
+        const since = new URL(url).searchParams.get('since');
+        return { status: 200, ok: true, json: async () => ({ next_batch: since ?? 'S1', rooms: { join: {} } }) };
+      }
+      return { status: 404, ok: false };
+    };
+    const st13 = msl.startMatrixSyncListener({ cfg: mt.resolveMatrixConfig(MT_ENV),
+      fetchImpl: syncStub13, cursorPath: path.join(dirSync, 'c13.json'), idleMs: 10 });
+    ok('P13 前置：listener 健康（waiter 路径已启用）', st13.ok === true && msl.isMatrixSyncListenerHealthy() === true);
+    let messagesCalls13 = 0;
+    const base13 = mkMatrixApi();
+    const mtFetch13 = async (url, opts = {}) => {
+      if (url.includes('/messages?')) messagesCalls13++;
+      return base13(url, opts);
+    };
+    const r13 = await fxo.fixVerifyRound(pool, { run: s13.run, binding: s13.binding,
+      deps: { ...depsBase(mtFetch13) } });
+    const run13 = await orch.getRun(pool, s13.run.run_id);
+    ok('P13a waiter 超时 → collectReply sweep 命中既有回复（四角色轮次完成）',
+      r13.ok === true && r13.executor === 'agentteams' && run13.status === 'COMPLETED' && messagesCalls13 >= 4,
+      { r: r13, msgs: messagesCalls13 });
+    ok('P13b waiter 全部超时未结算（推送缺席由 sweep 兜住，零双结算）',
+      msl.matrixSyncListenerState().settled === 0, msl.matrixSyncListenerState());
+  } finally {
+    await msl.stopMatrixSyncListener().catch(() => {});
+    msl.__resetMatrixSyncListenerForTests();
+    mt.__resetMatrixLoginForTests();
+    fs.rmSync(dirSync, { recursive: true, force: true });
+  }
 } catch (e) { fail++; console.error('HARNESS ERROR', e); }
 finally {
   await pool.end().catch(() => {});
