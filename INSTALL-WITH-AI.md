@@ -3,7 +3,7 @@
 > 用途：如果你觉得 MergePilot 的安装手续太多，把**本文件全部内容**复制给任意 AI 编码助手
 > （Claude Code / Codex / Cursor / 通义灵码等均可），它就能按下面的指令带你完成自托管部署。
 > 本卡与 [deploy/selfhost/README.md](deploy/selfhost/README.md)（人类阅读版，同一版本基线）内容一致：
-> 版本 `v0.2.0-beta.6-rc.35.6-rc8.4.1`，镜像 OCI index `sha256:c874b4d88ef67387401caf5b04d94ee9d4aa2fd9c6254301fc167a9d5505cbd3`。
+> 版本 `v0.2.0-beta.6-rc.35.6-rc8.5`，镜像 OCI index `sha256:f8bc369f5b046536103d75ba53c4863871abb3ecddbdfe920baf29c6428afe9a`。
 > 每一步都有「可直接执行的命令」与「可校验的成功判据」；AI 在失败时应停下向你索要错误输出，而不是猜。
 
 ---
@@ -30,12 +30,12 @@
 
 ```bash
 git clone https://github.com/nghqqa/MergePilot.git
-cd MergePilot && git checkout v0.2.0-beta.6-rc.35.6-rc8.4.1
+cd MergePilot && git checkout v0.2.0-beta.6-rc.35.6-rc8.5
 cd deploy/selfhost
 cp .env.example .env && chmod 600 .env
 ```
 
-成功判据：`git checkout` 输出指向 tag `v0.2.0-beta.6-rc.35.6-rc8.4.1`；`.env` 存在。
+成功判据：`git checkout` 输出指向 tag `v0.2.0-beta.6-rc.35.6-rc8.5`；`.env` 存在。
 
 ### 第 2 步：填最小必填集（先跑起来，审查接入可后补）
 
@@ -56,9 +56,9 @@ curl -s http://127.0.0.1:48500/api/health
 ```
 
 成功判据（全部满足才算过）：`"ok": true`、`"data_mode": "live"`、`"mu_schema_ready": true`、
-`"version": "v0.2.0-beta.6-rc.35.6-rc8.4.1"`。首次启动自动建库建表，无需手工 SQL。
-（可选）镜像一致性：`docker buildx imagetools inspect ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc8.4.1`
-的 Digest 行应等于 `sha256:c874b4d88ef67387401caf5b04d94ee9d4aa2fd9c6254301fc167a9d5505cbd3`。
+`"version": "v0.2.0-beta.6-rc.35.6-rc8.5"`。首次启动自动建库建表，无需手工 SQL。
+（可选）镜像一致性：`docker buildx imagetools inspect ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc8.5`
+的 Digest 行应等于 `sha256:f8bc369f5b046536103d75ba53c4863871abb3ecddbdfe920baf29c6428afe9a`。
 
 ### 第 4 步：首次登录（用户本人操作，AI 不得代输凭据）
 
