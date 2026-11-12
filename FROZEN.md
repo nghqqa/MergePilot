@@ -1,6 +1,6 @@
 # FROZEN — 项目冻结与事件响应维护状态
 
-> 状态：**事件响应维护**（2026-11-11 起——按终态条款自动回归：解冻轮三项 PR-0/#545、PR-A/#546、PR-B/#547 已全部合入且组合回归全绿、隔离验收通过，见 §6 台账与 Release v0.2.0-beta.6-rc.35.6-rc8.5）。
+> 状态：**事件响应维护**（2026-10-26 冻结协议建立；2026-11-11 解冻轮按授权完成——PR-0/#545、PR-A/#546、PR-B/#547 合入且组合回归全绿、隔离验收通过，并按单独授权发布 **rc8.5**（Latest）与完成生产换版，详见 §1/§6；解冻轮已关闭，恢复冻结规则）。
 > 2026-11-11 解冻轮已完成并关闭；冻结规则（2026-10-26 版）恢复生效。
 > 本文件是冻结状态的唯一权威说明；与本文冲突的旧文档段落以本文为准。
 
@@ -10,11 +10,11 @@
 |---|---|---|
 | main 分支 | `3879e39`（PR#547 feat/matrix-event-delivery，含 PR#546 webhook 预检；2026-11-11 解冻轮产物） | 已发布基线的祖先链 |
 | rc8.4.1 tag | `v0.2.0-beta.6-rc.35.6-rc8.4.1` → commit `ba089624e266f7aa14dda3f45285a3232b7f5938` | **已发布 + Latest**（GHCR + GitHub Release + 离线包；2026-11-11 API 复核 ✓） |
-| 生产 console | 镜像 `sha256:c874b4d88ef6…5cbd3`（= rc8.4.1 index），容器 `beta-mp-console` | **已部署**（= rc8.4.1）；计划内停止（2026-11-11 晚复核：Docker Desktop 已再次停止，恢复 = 启动 Docker Desktop → `deploy/mergepilot-stack/start-prod.ps1`；恢复后是否换版 rc8.5 另行授权） |
-| rc8.5 release | `v0.2.0-beta.6-rc.35.6-rc8.5` → commit `3879e390`；镜像 OCI index `sha256:f8bc369f…afe9a`（amd64 `91b30216…1438`） | **已发布 + Latest**（2026-11-11；trivy 全零 / secrets=0 / SBOM 48 / 隔离栈三轮四角色全链 COMPLETED，证据=evidence-rc85-dev1/EVIDENCE.md） |
+| 生产 console | 镜像 `sha256:f8bc369f5b04…fe9a`（= rc8.5 index），容器 `beta-mp-console`（`e61352be4491`） | **已部署**（= rc8.5；2026-11-11 受控换版，换版前 PG 备份 `mu-pre-rc85sw`+rc8.4.1 回滚锚 `c874b4d8…5cbd3` 就位）；2026-11-12 计划内停止（用户指令；数据在卷，恢复 = start-prod.ps1） |
+| rc8.5 release | `v0.2.0-beta.6-rc.35.6-rc8.5` → commit `3879e390`；镜像 OCI index `sha256:f8bc369f…afe9a`（amd64 `91b30216…1438`） | **已发布 + Latest**（2026-11-11；trivy 全零 / secrets=0 / SBOM 48 / 隔离栈三轮四角色全链 COMPLETED，证据=evidence-rc85-dev1/EVIDENCE.md）；同日完成生产换版（观察窗见上） |
 | 安全姿态 | trivy 漏洞全零 / secrets=0；基础镜像 CVE-2026-111497（brotli）已双面闭合（node 22.23.4 + brotli-libs 1.2.1-r0） | 已验收 |
 | 登录与权限 | A/B/C/D 四角色真实 OAuth（GitHub platform_admin/contributor、Gitee maintainer/auditor）+ 服务端授权边界逐项实测，全部与 `authz.mjs` 一致 | 已验收 |
-| 观察窗 | rc8.4.1 换版后 T+1h：22/22 有效样本全绿、restarts=0、错误日志 0 行 | 已通过 |
+| 观察窗 | rc8.5 换版后 T+1h（2026-11-11T11:47:24Z→12:50:36Z）：22/22 有效样本全绿、restarts=0、错误日志 0 行（rc8.4.1 换版观察亦已通过，历史留档） | 已通过 |
 | schema | v29（rc8.3→rc8.4.1 零迁移） | 稳定 |
 
 **如实边界（未验证/未覆盖，勿当已完成）**：真实业务流量与非空审查管线仅历史样本；
