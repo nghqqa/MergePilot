@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>已知限制与支持矩阵 · MergePilot</title>
-<link rel="stylesheet" href="assets/style.7e62632a.css">
+<link rel="stylesheet" href="assets/style.60415178.css">
 <script src="assets/nav.e6cc8392.js" defer></script>
 </head>
 <body>
@@ -99,13 +99,14 @@ Beta 通道接口与配置项可能随版本调整；生产使用建议钉住 di
 </div>
 
 <h2 id="validation-status">验证范围</h2>
-<p>截至 2026-11-12，rc.35.6-rc8.5 已发布；维护者生产实例于 2026-11-11 完成 rc.35.6-rc8.5 受控换版与 T+1h 连续观察通过（22/22 样本全绿、零重启、零错误日志；含 rc8.4.1 的 CVE-2026-111497 brotli 双面闭合与本轮事件投递+入口预检两项改进），并于 2026-11-12 按冻结协议执行计划内停机保数；角色登录验收覆盖四角色——platform_admin（GitHub）/maintainer（Gitee）/contributor（GitHub，含越权拒绝实证）/auditor（Gitee，邀请认领+只读边界实证，验收后账号按授权撤销）
-（换版 2026-10-18T12:37Z；T+1h 观察满窗通过——33 次采样全部 healthy、零重启、
-窗口内错误日志 0 行）；<strong>首位未参与开发的真实用户试用仍待验</strong>。
+<p>截至 2026-11-12，<code>rc.35.6-rc8.5</code> 已发布；维护者生产实例于 2026-11-11 完成 <code>rc.35.6-rc8.5</code>
+受控换版与 T+1h 连续观察通过（22/22 样本全绿、零重启、零错误日志；含 <code>rc8.4.1</code> 的 CVE-2026-111497 brotli 双面闭合与本轮
+Matrix <code>/sync</code> 事件投递 + Webhook 入口预检两项改进），并于 2026-11-12 按冻结协议执行计划内停机保数。
+角色登录验收覆盖四角色——<code>platform_admin</code>（GitHub）/ <code>maintainer</code>（Gitee）/ <code>contributor</code>（GitHub，含越权拒绝实证）/
+<code>auditor</code>（Gitee，邀请认领+只读边界实证，验收后账号按授权撤销）；<strong>首位未参与开发的真实用户独立首装与非空业务流量仍待验</strong>。
 演示夹具登录不等于 OAuth 接入验收，预置发现与补丁证据不等于真实模型产出或测试执行结果。</p>
-<p><strong>知识库引用（RAG V1）能力边界</strong>：run 页按需检索知识库并展示可追溯参考引用——<strong>已实现</strong>。
-worker 执行期自动检索与引用快照持久化——<strong>未建设</strong>（接口与契约已备）。
-生产语义检索已通过隔离+机器通道端到端验证；生产 run 页面级展示待维护者 OAuth 登录后验收（本机 fixture 登录不适用于生产环境）。</p>
+<p><strong>知识库引用（RAG）能力边界</strong>：run 页按需检索知识库（RAG V1）与执行期自动参考采集及快照持久化（RAG V2，<code>rc.35.6-rc4</code> 起）均已实现；
+检索结果仅作为参考，不自动成为审查结论。生产语义检索已通过隔离+机器通道端到端验证，使用前需按部署指南为 <code>bge-m3</code> 备齐模型文件（未配置时如实显示 <code>NOT_WIRED</code>）。</p>
 <p>真实手机、200% 真缩放与读屏器尚未验证；候选环境中远端读取失败时，完整合并资格展示仍受限。
 失败提示与禁用行为已检查，不能据此认定该环境具备真实提交或合并资格。
 使用者可先按<a href="user-guide.html#read-results">首次使用的只读路径</a>核对理解与导航。</p>

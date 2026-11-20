@@ -50,7 +50,7 @@ Gitee OAuth 复验仅覆盖 maintainer 一路径；审批/修复/合并等受控
 1. Node.js 安全通告与 alpine 安全仓库（brotli/zlib/openssl 链）——是否出现 HIGH/CRITICAL；
 2. GitHub（App/OAuth/webhook API）与 Gitee 开放平台 changelog——是否有破坏性变更公告；
 3. `ghcr.io/nghqqa/mergepilot-console` 镜像可拉取性与 tag 完整性（匿名核验）；
-4. docs.nghqqa.cn 站点可达性与当前页版本一致性；
+4. mergepilot.nghqqa.cn 站点可达性与当前页版本一致性；
 5. 本仓库 main 与最新 tag 的关系（确认无人误推功能提交）。
 
 **输出格式**（巡检结论一行制）：

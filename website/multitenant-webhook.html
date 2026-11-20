@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>多租户与 webhook · MergePilot</title>
-<link rel="stylesheet" href="assets/style.7e62632a.css">
+<link rel="stylesheet" href="assets/style.60415178.css">
 <script src="assets/nav.e6cc8392.js" defer></script>
 </head>
 <body>
@@ -62,10 +62,11 @@
 <div class="crumbs"><a href="index.html">首页</a> / 多租户与 webhook</div>
 <h1>多租户与 webhook</h1>
 
-<div class="warn">公网入口要求：GitHub Webhook 必须有<strong>公网可达的 HTTPS 入口</strong>，
-并转发到本机 webhook 监听端口 <code>48590</code>。入口实现不限——Nginx、Caddy、
-Cloudflare Tunnel 或其他任意反向代理/隧道均可，仓库不绑定特定实现。<strong>没有任何公网入口时</strong>，
-webhook 无法自动进入审查管线（本地管理与健康检查不受影响）。</div>
+<div class="warn">公网入口要求：自动 Webhook 必须有<strong>公网可达的 HTTPS 入口</strong>，由部署者自己的反向代理或隧道
+（Nginx、Caddy、Cloudflare Tunnel 等均可，仓库不绑定特定实现）转发至本机回环端口：
+GitHub Webhook 指向 <code>127.0.0.1:48590</code>（<code>webhook-ingress</code>），Console/OAuth（及 Gitee Webhook）指向
+<code>127.0.0.1:48500</code>。完整 Nginx / Caddy / Cloudflare Tunnel 模板与两种暴露拓扑见
+<a href="security.html">安全加固清单</a>。<strong>没有任何公网入口时</strong>，webhook 无法自动进入审查管线（本机管理与健康检查不受影响）。</div>
 
 <h2>GitHub App（webhook 来源）</h2>
 <ol>
@@ -87,6 +88,29 @@ webhook 无法自动进入审查管线（本地管理与健康检查不受影响
 <p>另建一个 OAuth App（Settings → Developer settings → OAuth Apps），
 callback 填 <code>https://你的域名/api/mu/auth/oauth/github/callback</code>，
 凭据填 <code>MU_GITHUB_OAUTH_CLIENT_ID/SECRET</code>。</p>
+
+<h2>Gitee OAuth 与 Webhook（可选）</h2>
+<ol>
+<li><strong>OAuth 登录</strong>：在 Gitee 第三方应用创建应用，回调填
+   <code>https://你的域名/api/mu/auth/oauth/gitee/callback</code>，将 Client ID / Secret / Callback URL 填入
+   <code>MU_GITEE_OAUTH_*</code>（三项任一缺失时登录页不渲染 Gitee 入口），并配置 <code>MU_GITEE_PAT</code> 用于仓库连接与受控写入。</li>
+<li><strong>Webhook 路由注意（避坑）</strong>：仓库默认自托管模板中的 <code>deploy/selfhost/webhook-proxy.js</code>（监听
+   <code>48590</code>）<strong>仅放行 <code>POST /api/mu/github/webhook</code> 与 <code>GET /api/health</code></strong>。
+   若将 Gitee Webhook（<code>POST /api/mu/gitee/webhook</code>）直接指向 <code>48590</code> 会返回 <code>404 path_not_exposed</code>——
+   请在 Nginx / Caddy 中将 <code>/api/mu/gitee/webhook</code> 精确路由至 <code>127.0.0.1:48500</code>（示例见
+   <a href="security.html">安全加固清单</a>），或按需在 <code>webhook-proxy.js</code> 白名单中补充该路径。</li>
+<li><strong>能力边界</strong>：Gitee 当前连接器不支持读取 CI 状态，因此 Gitee 仓库的合并会被资格门阻塞（审查、评论、应用修复正常可用）。</li>
+</ol>
+
+<h2>公网入口端到端验证</h2>
+<p>配好反代或 Cloudflare Tunnel 并启动容器后，按以下两步核验公网连通性：</p>
+<pre><code># 1. 验证 HTTPS 入口与健康门（应返回 ok: true 且 version 为当前部署版本）
+curl -fsS https://你的域名/api/health
+
+# 2. 验证最小暴露面（若采用仅暴露 48590 的拓扑，访问未放行路径应返回 404 path_not_exposed）
+curl -i https://你的域名/multiuser</code></pre>
+<p>随后在 GitHub App 设置页 → <strong>Advanced → Recent Deliveries</strong> 中点击任意一条投递执行 <strong>Redeliver</strong>，
+确认响应状态码为 <code>2xx</code>，并在 Console 对应租户的 PR 列表看到审查记录入队。</p>
 
 <h2>installation → 租户注册</h2>
 <p>用户安装 App 后跳转回控制台，系统把该 installation 注册到<strong>当前会话所属租户</strong>。

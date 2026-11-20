@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Docker 自托管 · MergePilot</title>
-<link rel="stylesheet" href="assets/style.7e62632a.css">
+<link rel="stylesheet" href="assets/style.60415178.css">
 <script src="assets/nav.e6cc8392.js" defer></script>
 </head>
 <body>
@@ -83,11 +83,18 @@ postgres/sidecar 仅内部网络可达。</div>
 <p>备份/恢复 = 备份/恢复 <code>pgdata</code> 卷或定期 <code>pg_dump</code>（见
 <a href="upgrade-rollback.html">升级与回滚</a>）。</p>
 
-<h2>webhook 入口（对外）</h2>
-<p>GitHub App 的 webhook URL 应指向你的公网入口（TLS 反代）→ 转发到
-<code>127.0.0.1:48590</code>（webhook-ingress），路径
-<code>/api/mu/github/webhook</code>。该入口只放行 webhook 与 health 两个路径，
-其余一律 404——管理面（48500）不要直接暴露公网。</p>
+<h2>公网入口与反代拓扑（对外）</h2>
+<p>compose 默认仅在 <code>127.0.0.1</code> 暴露 <code>48500</code>（Console 全量）与 <code>48590</code>（<code>webhook-ingress</code>）。
+对外暴露时须由部署者前置 HTTPS 反向代理或隧道（Nginx / Caddy / Cloudflare Tunnel）：</p>
+<ul>
+<li><strong>GitHub Webhook 路径</strong>（<code>POST /api/mu/github/webhook</code>）：推荐转发到 <code>127.0.0.1:48590</code>；
+<code>webhook-proxy.js</code> 仅放行该路径与 <code>GET /api/health</code>，其余路径一律 <code>404</code>。</li>
+<li><strong>Console 与 OAuth 路径</strong>（<code>/login</code>、<code>/multiuser</code>、<code>/api/mu/auth/*</code>）：
+需要异地团队登录时经 HTTPS 反代转发至 <code>127.0.0.1:48500</code> 并加限流；若仅内网/Tailscale 访问，可不把 <code>48500</code> 暴露公网。</li>
+<li><strong>Gitee Webhook 路径</strong>（<code>POST /api/mu/gitee/webhook</code>）：<code>48590</code> 默认未放行该路径，须在反代中转发至 <code>127.0.0.1:48500</code>。</li>
+</ul>
+<p>可直接复用的 Nginx / Caddy / Cloudflare Tunnel 完整配置模板见 <a href="security.html">安全加固清单</a>，
+公网连通性与 GitHub Delivery 验收步骤见 <a href="multitenant-webhook.html">多租户与 webhook</a>。</p>
 
 <h2>cchain 信任链（可选）</h2>
 <p>三项配置齐全后 cchain=READY，任一缺失即 BLOCKED（fail-closed，控制台如实显示）：</p>
