@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>配置参考 · MergePilot</title>
-<link rel="stylesheet" href="assets/style.7e62632a.css">
+<link rel="stylesheet" href="assets/style.60415178.css">
 <script src="assets/nav.e6cc8392.js" defer></script>
 </head>
 <body>
@@ -69,6 +69,7 @@
 <tr><th>变量</th><th>说明 / 生成</th></tr>
 <tr><td><code>POSTGRES_PASSWORD</code></td><td>数据库密码。<code>openssl rand -hex 16</code></td></tr>
 <tr><td><code>CONSOLE_SESSION_SECRET</code></td><td>会话签名密钥。<code>openssl rand -base64 32</code>；轮换会使全部会话失效</td></tr>
+<tr><td><code>MU_BOOTSTRAP_ADMIN_SUBJECT</code></td><td>首任平台管理员绑定（<code>rc8+</code> 开箱初始化）：填 <code>github-oauth:&lt;GitHub数字id&gt;</code>（须带前缀），首次启动幂等建库并授权</td></tr>
 <tr><td><code>MU_GITHUB_APP_ID</code> / <code>MU_GITHUB_APP_SLUG</code></td><td>GitHub App 的数字 id 与 URL slug</td></tr>
 <tr><td><code>MU_GITHUB_APP_PRIVATE_KEY</code></td><td>App 私钥 PEM 全文（含 BEGIN/END 行）</td></tr>
 <tr><td><code>MU_GITHUB_WEBHOOK_SECRET</code></td><td>webhook 签名密钥，须与 App 设置页一致。<code>openssl rand -hex 32</code></td></tr>
@@ -101,9 +102,10 @@
 </table>
 
 <h2>首个平台管理员</h2>
-<p>生产空库的<strong>首个 platform_admin 由部署者在数据库直授</strong>——邀请永不授予
-<code>platform_admin</code>（API 校验 / 认领守卫 / 数据库 CHECK 三层拒绝）。完整 SQL、
-硬校验与回退见仓库 <code>deploy/selfhost/README.md</code>「首个平台管理员初始化（生产）」。
+<p><code>rc8+</code> 推荐通过环境变量 <code>MU_BOOTSTRAP_ADMIN_SUBJECT=github-oauth:&lt;你的GitHub数字id&gt;</code>
+在首次启动时自动完成建库与首任 <code>platform_admin</code> 绑定（幂等，无需手工 SQL）。
+如需在既有空库中通过数据库直授或排障回退，完整 SQL 与硬校验见仓库 <code>deploy/selfhost/README.md</code>
+「首个平台管理员初始化（生产）」。邀请永不授予 <code>platform_admin</code>（API 校验 / 认领守卫 / 数据库 CHECK 三层拒绝）。
 <code>MU_ALLOW_FIXTURE_LOGIN=1</code> 仅限本机开发/测试临时使用，生产保持关闭（诊断会 WARN）。</p>
 
 <div class="warn">compose 模板对 <code>POSTGRES_PASSWORD</code> 使用 <code>:?</code> 必填守卫——

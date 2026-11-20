@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>安全加固 · MergePilot</title>
-<link rel="stylesheet" href="assets/style.7e62632a.css">
+<link rel="stylesheet" href="assets/style.60415178.css">
 <script src="assets/nav.e6cc8392.js" defer></script>
 </head>
 <body>
@@ -72,21 +72,120 @@
 <li>数据库/keystore/模型卷不发布端口（仅内部网络可达）。</li>
 </ul>
 
-<h2>部署侧必须项</h2>
-<ol>
-<li><strong>TLS 反向代理</strong>（强制）：Caddy 最小示例——
-<pre><code>your.domain {
-  reverse_proxy 127.0.0.1:48500
+<h2>部署侧必须项：两种公网暴露拓扑</h2>
+<p>MergePilot 默认仅在本机回环暴露两个端口：<code>127.0.0.1:48500</code>（Console 管理面 + OAuth + 全量 API）
+与 <code>127.0.0.1:48590</code>（<code>webhook-ingress</code>，仅放行 <code>POST /api/mu/github/webhook</code>
+与 <code>GET /api/health</code>）。请按团队网络条件二选一，<strong>切勿直接裸露 48500 或以明文 HTTP 承载会话</strong>：</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>拓扑</th><th>适用场景</th><th>公网暴露面</th><th>说明</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>拓扑 A：单域名 HTTPS 团队共用</strong></td>
+  <td>异地/多成员需浏览器 OAuth 登录与接受邀请</td>
+  <td><code>https://你的域名</code> 统一终止 TLS；Webhook 路径分流至 <code>48590</code>，Console 与 OAuth 路径转发至 <code>48500</code></td>
+  <td>最常见团队方案；反代层必须配限流与 HTTPS 301</td>
+</tr>
+<tr>
+  <td><strong>拓扑 B：最小暴露面分离（推荐高敏内网）</strong></td>
+  <td>成员均在公司 VPN / Tailscale / 内网访问 Console</td>
+  <td>公网仅暴露 <code>48590</code>（GitHub Webhook）；<code>48500</code> 仅限内网/Tailscale HTTPS 访问</td>
+  <td>公网完全不可达 <code>/multiuser</code> 与其余 <code>/api/*</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h3>生产反向代理模板（Nginx）</h3>
+<p>以下为<strong>拓扑 A</strong> 的完整生产模板（含 HTTP→HTTPS 301、请求头透传、Webhook 分流与限流）。若采用<strong>拓扑 B</strong>，
+删除 <code>location /</code> 块或将其改为 <code>return 404;</code>，仅保留 webhook 与 health 即可：</p>
+<pre><code># 放在 http {} 块内：限流区定义
+limit_req_zone $binary_remote_addr zone=mp_api:10m rate=60r/m;
+limit_req_zone $binary_remote_addr zone=mp_webhook:10m rate=120r/m;
+
+server {
+    listen 80;
+    server_name mp.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name mp.example.com;
+    ssl_certificate     /etc/letsencrypt/live/mp.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/mp.example.com/privkey.pem;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+    # GitHub Webhook → 转发至 webhook-ingress (48590)
+    location = /api/mu/github/webhook {
+        limit_req zone=mp_webhook burst=30 nodelay;
+        proxy_pass http://127.0.0.1:48590;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 如使用 Gitee Webhook：48590 默认只放行 GitHub webhook，Gitee 须直转 48500
+    location = /api/mu/gitee/webhook {
+        limit_req zone=mp_webhook burst=30 nodelay;
+        proxy_pass http://127.0.0.1:48500;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 管理面与 OAuth API（拓扑 B 最小暴露面时删去以下两个 location）
+    location /api/ {
+        limit_req zone=mp_api burst=20 nodelay;
+        proxy_pass http://127.0.0.1:48500;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:48500;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 }</code></pre>
-   nginx 等价：终止 TLS 后 <code>proxy_pass http://127.0.0.1:48500;</code>；
-   HTTP→HTTPS 301 跳转；禁止明文承载已认证会话。</li>
-<li><strong>入口限流</strong>：反代层对 <code>/api/*</code> 限 60 req/min/IP、
-   webhook 路径 120 req/min/IP（Caddy <code>rate_limit</code> 插件或 nginx
-   <code>limit_req</code>）；webhook 的 HMAC 验签不因限流关闭。</li>
-<li><strong>防火墙</strong>：仅放行反代端口；48500/48590 保持回环绑定；
-   数据库端口不对任何外部网络开放。</li>
-<li><strong>最小暴露面</strong>：webhook-ingress 只放行 webhook 与 health；
-   不要把管理面（/multiuser、其余 /api/*）直接暴露公网。</li>
+
+<h3>生产反向代理模板（Caddy，自动申请 TLS）</h3>
+<pre><code>mp.example.com {
+    @gh_webhook path /api/mu/github/webhook
+    reverse_proxy @gh_webhook 127.0.0.1:48590
+
+    # 拓扑 A：同时暴露 Console 与 OAuth（含 Gitee webhook）
+    # 拓扑 B（仅暴露 GitHub Webhook）时，把下面一行改为 respond 404
+    reverse_proxy 127.0.0.1:48500
+}</code></pre>
+
+<h3>无公网 IP 场景：Cloudflare Tunnel 最小配置</h3>
+<p>若部署机位于内网/NAT 后且无公网 IP，可使用 Cloudflare Tunnel（<code>cloudflared</code>）将 HTTPS 入口安全打通至本机回环端口：</p>
+<pre><code># ~/.cloudflared/config.yml（拓扑 A 示例；仅暴露 Webhook 时删去最后一条通配规则）
+tunnel: &lt;YOUR_TUNNEL_ID&gt;
+credentials-file: /etc/cloudflared/&lt;YOUR_TUNNEL_ID&gt;.json
+
+ingress:
+  - hostname: mp.example.com
+    path: ^/api/mu/github/webhook$
+    service: http://127.0.0.1:48590
+  - hostname: mp.example.com
+    service: http://127.0.0.1:48500
+  - service: http_status:404</code></pre>
+
+<ol>
+<li><strong>防火墙</strong>：仅放行反代 80/443 端口；<code>48500</code> / <code>48590</code> 保持 <code>127.0.0.1</code> 回环绑定；数据库端口不对任何外部网络开放。</li>
+<li><strong>限流不削弱验签</strong>：反代层限流（API 60 req/min/IP、Webhook 120 req/min/IP）与后端 HMAC-SHA256 验签叠加生效。</li>
 </ol>
 
 <h2>secrets 纪律</h2>

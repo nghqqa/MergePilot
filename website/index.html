@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="MergePilot：自托管多 Agent PR 审修闭环。AI 复现、Skill 算事实、RAG 查规范——你的仓库、密钥与数据留在自己的服务器上。">
-<title>MergePilot — 多 Agent PR 审修闭环 · 自托管</title>
-<link rel="stylesheet" href="assets/style.7e62632a.css">
+<meta name="description" content="MergePilot：自托管多 Agent PR 审查与受控变更工作台。审查留痕，远端写入与合并由维护者逐次「预览 → 确认」决定。">
+<title>MergePilot — 自托管多 Agent PR 审查与受控变更工作台</title>
+<link rel="stylesheet" href="assets/style.60415178.css">
 <script src="assets/nav.e6cc8392.js" defer></script>
 </head>
 <body>
@@ -26,108 +26,284 @@
 <main>
 
 <section class="hero">
-  <div class="hero-badge">v0.2.0-beta.6-rc.35.6-rc8.5 · Apache-2.0 · 开源自托管</div>
-  <h1>PR 事件接入，自动发起审查。<br><em>每一步写入都归维护者确认。</em></h1>
-  <p class="lead">MergePilot 是自托管的多 Agent PR 审修闭环。静态规则与模型审查汇集发现，可选 RAG 提供规范参考——结论落在你的 Console；维护者逐次「预览 → 确认」完成评论、机器人提交修复与合并，全程审计留痕。模型与修复验证按部署配置启用，未执行会如实标注。</p>
+  <div class="hero-badge">v0.2.0-beta.6-rc.35.6-rc8.5 · 事件响应维护 · Apache-2.0 开源自托管</div>
+  <h1>PR 事件自动审查，<br><em>每一步远端写入由维护者确认。</em></h1>
+  <p class="lead">MergePilot 是自托管的多 Agent PR 审查与受控变更工作台。接入你的 GitHub App 与 Gitee 仓库，将静态规则、外部 LLM 第二阶段与可选本地 RAG 发现汇集到你自己的 Console；评论、机器人提交修复、确认合并三类远端写均经「预览 → 确认」且全程审计留痕。</p>
   <div class="cta">
-    <a class="btn btn-primary" href="user-guide.html">开始使用</a>
-    <a class="btn btn-outline" href="quickstart.html">部署自己的实例</a>
+    <a class="btn btn-primary" href="quickstart.html">部署自己的实例</a>
+    <a class="btn btn-outline" href="user-guide.html">受邀成员首次使用</a>
     <a class="btn btn-outline" href="downloads.html">下载 rc.35.6-rc8.5</a>
-    <a class="btn btn-outline" href="build-from-source.html">源码构建</a>
+    <a class="btn btn-outline" href="https://github.com/nghqqa/MergePilot">GitHub 仓库</a>
   </div>
-  <div style="margin-top:32px;max-width:680px;margin-inline:auto;">
-    <div class="btn-ghost" onclick="navigator.clipboard.writeText('docker pull ghcr.io/nghqqa/mergepilot-console@sha256:f8bc369f5b046536103d75ba53c4863871abb3ecddbdfe920baf29c6428afe9a')" role="button" tabindex="0" aria-label="复制镜像拉取命令">
+  <div class="hero-sub-actions">
+    <div class="btn-ghost" onclick="navigator.clipboard&&navigator.clipboard.writeText('docker pull ghcr.io/nghqqa/mergepilot-console@sha256:f8bc369f5b046536103d75ba53c4863871abb3ecddbdfe920baf29c6428afe9a');this.classList.add('is-copied');this.querySelector('.copy').textContent='已复制 digest';setTimeout(()=>{this.classList.remove('is-copied');this.querySelector('.copy').textContent='点击复制';},1800)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}" role="button" tabindex="0" aria-label="复制镜像拉取命令">
       <span>$ docker pull ghcr.io/nghqqa/mergepilot-console@sha256:f8bc369f…afe9a</span>
       <span class="copy">点击复制</span>
     </div>
+    <div class="hero-meta-line">
+      <span>源码 <code>3879e390</code></span>
+      <span>Schema <code>v29</code></span>
+      <span>SBOM 48 组件 · Trivy 0 漏洞</span>
+      <a href="downloads.html#release-scope">校验与发布范围</a>
+    </div>
   </div>
 </section>
 
-<div class="stats" role="table" aria-label="关键指标">
-  <div class="stat"><div class="val">4</div><div class="lbl">Agent 角色</div><div class="stat-sub">Leader / Reviewer / Fixer / Verifier</div></div>
-  <div class="stat"><div class="val">v29</div><div class="lbl">Schema 版本</div></div>
-  <div class="stat"><div class="val">0</div><div class="lbl">rc.35.6-rc8.5 发布时漏洞数</div><div class="stat-sub">Trivy 全零 · secrets=0 · <a href="downloads.html">扫描记录</a></div></div>
-  <div class="stat"><div class="val">8</div><div class="lbl">租户隔离表</div></div>
-  <div class="stat"><div class="val">100%</div><div class="lbl">自托管</div></div>
+<div class="stats" role="table" aria-label="关键事实指标">
+  <div class="stat"><div class="val">4</div><div class="lbl">Agent 角色</div><div class="stat-sub">Reviewer / Fixer / Verifier / Leader</div></div>
+  <div class="stat"><div class="val">5</div><div class="lbl">非递增 RBAC 角色</div><div class="stat-sub">平台管理与业务裁定物理分离</div></div>
+  <div class="stat"><div class="val">v29</div><div class="lbl">Schema 版本</div><div class="stat-sub">业务表按 tenant 复合外键隔离</div></div>
+  <div class="stat"><div class="val">0</div><div class="lbl">发布时漏洞 / 密钥数</div><div class="stat-sub">Trivy 全零 · <a href="downloads.html">扫描档案</a></div></div>
+  <div class="stat"><div class="val">100%</div><div class="lbl">开源自托管</div><div class="stat-sub">非 SaaS · 数据与密钥完全自持</div></div>
 </div>
 
 <section class="section">
-  <h2 class="section-title">审查管线</h2>
-  <p class="section-sub">从 PR 提交到维护者确认合并——结论落在你的 Console；CI 状态作为合并资格输入读取；AI 审查按需调用你配置的 LLM 端点。</p>
+  <div class="section-head">
+    <div>
+      <div class="section-kicker">CONSOLE SHOWCASE</div>
+      <h2 class="section-title">界面与受控闭环实测</h2>
+      <p class="section-sub">从 PR 事件入队到维护者确认合并：点击任意截图可查看原始分辨率大图。</p>
+    </div>
+    <a href="user-guide.html">阅读完整使用流程 →</a>
+  </div>
+
+  <div class="showcase-hero">
+    <div class="showcase-bar">
+      <span class="showcase-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+      <span>MergePilot Console · PR 总览、风险状态与审查进度</span>
+      <a href="assets/images/console-overview.png" target="_blank" rel="noopener">查看原图 ↗</a>
+    </div>
+    <a href="assets/images/console-overview.png" target="_blank" rel="noopener">
+      <img src="assets/images/console-overview.png" alt="MergePilot Console 总览界面：PR 列表、风险状态与审查进度" loading="eager">
+    </a>
+    <div class="showcase-caption">
+      <span>集中查看租户内全部绑定仓库的 PR 审查进度、待审批票据与阻断原因；结论与证据全部落在你自己的实例中。</span>
+      <span>总览图：rc.16 脱敏测试环境</span>
+    </div>
+  </div>
+
+  <div class="shot-grid">
+    <article class="shot-card">
+      <a class="shot-thumb" href="assets/images/pipeline-agents.png" target="_blank" rel="noopener">
+        <img src="assets/images/pipeline-agents.png" alt="多角色审查管线与发现落库实测截图" loading="lazy">
+      </a>
+      <div class="shot-body">
+        <div class="shot-head"><span class="shot-step">01</span><h3>多角色审查管线与发现落库</h3></div>
+        <p>规则引擎、外部模型与 AgentTeams（Fixer / Leader / Verifier）逐轮耗时、执行状态与结构化发现分列留痕，未执行项如实标注。</p>
+      </div>
+    </article>
+
+    <article class="shot-card">
+      <a class="shot-thumb" href="assets/images/approval-gate.png" target="_blank" rel="noopener">
+        <img src="assets/images/approval-gate.png" alt="P0/P1 高危修复具名审批门实测截图" loading="lazy">
+      </a>
+      <div class="shot-body">
+        <div class="shot-head"><span class="shot-step">02</span><h3>P0/P1 高危修复具名审批门</h3></div>
+        <p>分支保护状态如实探测（未知即 fail-closed）；高危发现逐条生成绑定当前 head 的具名审批票，全批准后才放行修复轮。</p>
+      </div>
+    </article>
+
+    <article class="shot-card">
+      <a class="shot-thumb" href="assets/images/apply-preview.png" target="_blank" rel="noopener">
+        <img src="assets/images/apply-preview.png" alt="应用修复两阶段预览抽屉实测截图" loading="lazy">
+      </a>
+      <div class="shot-body">
+        <div class="shot-head"><span class="shot-step">03</span><h3>应用修复两阶段预览</h3></div>
+        <p>确认前强制核对远端当前 head 与补丁摘要一致，并在隔离副本实测 <code>git apply --check</code> 通过，由机器人身份提交修复 commit。</p>
+      </div>
+    </article>
+
+    <article class="shot-card">
+      <a class="shot-thumb" href="assets/images/merge-gate.png" target="_blank" rel="noopener">
+        <img src="assets/images/merge-gate.png" alt="统一合并资格门全绿放行实测截图" loading="lazy">
+      </a>
+      <div class="shot-body">
+        <div class="shot-head"><span class="shot-step">04</span><h3>统一合并资格门（双面 CI 核验）</h3></div>
+        <p>新 commit 推送后旧 head 证据自动失效阻断；仅当前 head 审查完成 + 真实 CI 通过 + mergeable 已知时才开放合并确认。</p>
+      </div>
+    </article>
+  </div>
+  <p class="showcase-footnote">说明：总览图为 rc.16 测试环境历史数据（账号与组织已打码）；01–04 四宫格为隔离验收实仓 <code>PR #12</code> 端到端实测截图，不代表已产生外部用户真实业务流量。</p>
+</section>
+
+<section class="section section-alt">
+  <div class="section-head">
+    <div>
+      <div class="section-kicker">PIPELINE &amp; AGENTS</div>
+      <h2 class="section-title">事件驱动审查管线与四角色协作</h2>
+      <p class="section-sub">四个角色不代表四个 LLM，也不代表每个 PR 都执行全部环节；内部 Leader 决定管线状态，维护者决定是否应用与合并。</p>
+    </div>
+  </div>
   <div class="flow">
-    <svg viewBox="0 0 760 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="webhook 到 consumer 审查管线流程图">
-      <defs><marker id="ar" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0 0L8 3L0 6Z" fill="#2dd4bf"/></marker></defs>
-      <rect x="8" y="42" width="118" height="52" rx="8" fill="#132029" stroke="#1a2e3d" stroke-width="1.5"/>
-      <text x="67" y="65" text-anchor="middle" font-size="13" fill="#e2e8f0" font-weight="600">GitHub PR</text>
-      <text x="67" y="82" text-anchor="middle" font-size="11" fill="#94a3b8">opened / synchronized</text>
-      <line x1="126" y1="68" x2="168" y2="68" stroke="#2dd4bf" stroke-width="1.5" marker-end="url(#ar)"/>
-      <rect x="172" y="42" width="118" height="52" rx="8" fill="#132029" stroke="#1a2e3d" stroke-width="1.5"/>
-      <text x="231" y="63" text-anchor="middle" font-size="13" fill="#e2e8f0" font-weight="600">webhook</text>
-      <text x="231" y="80" text-anchor="middle" font-size="11" fill="#94a3b8">HMAC + dedup</text>
-      <line x1="290" y1="68" x2="332" y2="68" stroke="#2dd4bf" stroke-width="1.5" marker-end="url(#ar)"/>
-      <rect x="336" y="42" width="118" height="52" rx="8" fill="#132029" stroke="#1a2e3d" stroke-width="1.5"/>
-      <text x="395" y="63" text-anchor="middle" font-size="13" fill="#e2e8f0" font-weight="600">consumer</text>
-      <text x="395" y="80" text-anchor="middle" font-size="11" fill="#94a3b8">45s tick · auto</text>
-      <line x1="454" y1="68" x2="496" y2="68" stroke="#2dd4bf" stroke-width="1.5" marker-end="url(#ar)"/>
-      <rect x="500" y="42" width="118" height="52" rx="8" fill="#0a3d3a" stroke="#2dd4bf" stroke-width="2"/>
-      <text x="559" y="63" text-anchor="middle" font-size="13" fill="#5eead4" font-weight="600">multi-Agent</text>
-      <text x="559" y="80" text-anchor="middle" font-size="11" fill="#94a3b8">AI · Skill · RAG</text>
-      <rect x="640" y="110" width="110" height="52" rx="8" fill="#132029" stroke="#8a5a00" stroke-width="1.5" stroke-dasharray="4 3"/>
-      <text x="695" y="131" text-anchor="middle" font-size="13" fill="#fbbf24" font-weight="600">CI status</text>
-      <text x="695" y="148" text-anchor="middle" font-size="11" fill="#94a3b8">只读 · 合并资格输入</text>
-      <text x="8" y="165" font-size="12" fill="#64748b">普通变更自动完成审查 · 高危变更停下等人工审批 · 提交/合并须维护者逐次确认</text>
+    <svg viewBox="0 0 820 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="PR 事件接入到维护者确认合并的审查管线流程图">
+      <defs>
+        <marker id="ar" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0 0L8 3L0 6Z" fill="#2dd4bf"/></marker>
+        <marker id="ar-amber" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0 0L8 3L0 6Z" fill="#fbbf24"/></marker>
+      </defs>
+      <rect x="8" y="34" width="128" height="58" rx="8" fill="#132029" stroke="#233a4a" stroke-width="1.5"/>
+      <text x="72" y="59" text-anchor="middle" font-size="13" fill="#e2e8f0" font-weight="600">GitHub / Gitee</text>
+      <text x="72" y="77" text-anchor="middle" font-size="11" fill="#94a3b8">PR 事件触发</text>
+
+      <line x1="136" y1="63" x2="172" y2="63" stroke="#2dd4bf" stroke-width="1.5" marker-end="url(#ar)"/>
+
+      <rect x="176" y="34" width="136" height="58" rx="8" fill="#132029" stroke="#233a4a" stroke-width="1.5"/>
+      <text x="244" y="59" text-anchor="middle" font-size="13" fill="#e2e8f0" font-weight="600">Webhook 入口</text>
+      <text x="244" y="77" text-anchor="middle" font-size="11" fill="#94a3b8">HMAC + 预检 + 去重</text>
+
+      <line x1="312" y1="63" x2="348" y2="63" stroke="#2dd4bf" stroke-width="1.5" marker-end="url(#ar)"/>
+
+      <rect x="352" y="34" width="138" height="58" rx="8" fill="#132029" stroke="#233a4a" stroke-width="1.5"/>
+      <text x="421" y="59" text-anchor="middle" font-size="13" fill="#e2e8f0" font-weight="600">状态机 + /sync</text>
+      <text x="421" y="77" text-anchor="middle" font-size="11" fill="#94a3b8">PG CAS · Matrix 流式</text>
+
+      <line x1="490" y1="63" x2="526" y2="63" stroke="#2dd4bf" stroke-width="1.5" marker-end="url(#ar)"/>
+
+      <rect x="530" y="34" width="132" height="58" rx="8" fill="#0a3d3a" stroke="#2dd4bf" stroke-width="2"/>
+      <text x="596" y="59" text-anchor="middle" font-size="13" fill="#5eead4" font-weight="600">Multi-Agent</text>
+      <text x="596" y="77" text-anchor="middle" font-size="11" fill="#94a3b8">规则 · LLM · RAG</text>
+
+      <line x1="662" y1="63" x2="694" y2="63" stroke="#2dd4bf" stroke-width="1.5" marker-end="url(#ar)"/>
+
+      <rect x="698" y="34" width="114" height="58" rx="8" fill="#132029" stroke="#34d399" stroke-width="1.5"/>
+      <text x="755" y="59" text-anchor="middle" font-size="13" fill="#34d399" font-weight="600">维护者确认</text>
+      <text x="755" y="77" text-anchor="middle" font-size="11" fill="#94a3b8">评论 / 修复 / 合并</text>
+
+      <rect x="530" y="116" width="132" height="50" rx="8" fill="#132029" stroke="#8a5a00" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <text x="596" y="138" text-anchor="middle" font-size="12" fill="#fbbf24" font-weight="600">双面 CI 状态</text>
+      <text x="596" y="155" text-anchor="middle" font-size="10.5" fill="#94a3b8">Statuses + Check Runs</text>
+      <path d="M662 141 L755 141 L755 96" fill="none" stroke="#fbbf24" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#ar-amber)"/>
+
+      <text x="8" y="148" font-size="11.5" fill="#8b9cb0">普通变更自动完成审查 · P0/P1 高危修复停下等具名审批票 · 远端写入全部需「预览 → 确认」</text>
+      <text x="8" y="168" font-size="11.5" fill="#64748b">系统不自动改代码、不自动合并、不设 required check、不绕过平台分支保护</text>
     </svg>
   </div>
-</section>
 
-<section class="section">
-  <h2 class="section-title">为什么是 MergePilot</h2>
-  <p class="section-sub">三个设计决策，定义我们与通用 CI 工具的差异。</p>
-  <div class="grid">
-    <div class="card">
-      <div class="icon">⚡</div>
-      <h3>Webhook 自动审查</h3>
-      <p>安装 GitHub App、完成仓库绑定并配置 webhook 后，PR 事件自动触发审查。静态规则与已启用的模型阶段分别记录结果；支持 openai_compatible 模型端点。</p>
+  <div class="role-strip">
+    <div class="role-pill">
+      <div class="role-pill-head"><strong>Reviewer</strong><span>审查</span></div>
+      <p>确定性静态规则 + 可选外部 LLM 第二阶段，产出结构化发现与建议。</p>
     </div>
-    <div class="card">
-      <div class="icon">🔐</div>
-      <h3>多租户隔离</h3>
-      <p>八张业务表按 tenant 强制收窄；installation 与租户一一绑定；撤权后同会话下一请求即 403。生产实证通过完整隔离矩阵。</p>
+    <div class="role-pill">
+      <div class="role-pill-head"><strong>Fixer</strong><span>建议修复</span></div>
+      <p>在隔离环境生成修复补丁与验证证据；此阶段零远端写入。</p>
     </div>
-    <div class="card">
-      <div class="icon">📦</div>
-      <h3>可验证的供应链</h3>
-      <p>GHCR 不可变 digest 镜像 + 离线 tar + CycloneDX SBOM（rc.35.6-rc8.5：48 组件）。该制品发布时 trivy 扫描漏洞为 0、secrets=0；记录与 SHA256SUMS 见<a href="downloads.html">下载与校验</a>，不构成永久无漏洞保证。</p>
+    <div class="role-pill">
+      <div class="role-pill-head"><strong>Verifier</strong><span>独立验证</span></div>
+      <p>独立核验补丁与测试证据，结构强制不读取 Fixer 自述推理。</p>
     </div>
-    <div class="card">
-      <div class="icon">🛡️</div>
-      <h3>写入全部受控</h3>
-      <p>系统不自动改代码、不自动合并。机器人提交修复与合并 PR 都要维护者逐次「预览 → 确认」；高危变更停下等人工审批票；平台分支保护照常生效。</p>
-    </div>
-    <div class="card">
-      <div class="icon">🔍</div>
-      <h3>cchain 信任链</h3>
-      <p>模型缓存完整性、供应商证明、运行绑定密钥三层校验。缺项如实显示 BLOCKED；默认不阻断审查主链，仅显式启用 cchain 强制策略时门控修复验证启动。</p>
-    </div>
-    <div class="card">
-      <div class="icon">🔓</div>
-      <h3>Apache-2.0 开源</h3>
-      <p>源码 tag 与镜像 digest 一一同源。非 SaaS——部署、数据、密钥、审计完全自持。</p>
+    <div class="role-pill">
+      <div class="role-pill-head"><strong>Leader</strong><span>编排裁决</span></div>
+      <p>编排状态流转并由确定性策略保留管线终裁权；远端写归维护者。</p>
     </div>
   </div>
 </section>
 
 <section class="section">
-  <h2 class="section-title">快速开始</h2>
-  <p class="section-sub">以下为部署命令；还需完成配置、首管理员初始化与仓库接入。前置条件见 <a href="quickstart.html">快速开始</a>；受邀成员直接读<a href="user-guide.html">首次使用</a>。</p>
-  <pre><code>git clone https://github.com/nghqqa/MergePilot.git
+  <div class="section-head">
+    <div>
+      <div class="section-kicker">ARCHITECTURE HIGHLIGHTS</div>
+      <h2 class="section-title">六大核心工程设计</h2>
+      <p class="section-sub">面向企业与研发团队引入 AI 参与代码变更时的四个真实难题：状态一致性、防越权控制面、零信任出站治理与不可抵赖审计。</p>
+    </div>
+    <a href="security.html">安全加固清单 →</a>
+  </div>
+  <div class="arch-grid">
+    <article class="arch-card">
+      <span class="arch-tag">防 TOCTOU · 幂等对账</span>
+      <h3>两阶段远端写与未知态对账</h3>
+      <p>评论、机器人提交修复、确认合并均经 <code>preview → confirm</code> 两步确认，强绑定 <code>expected_remote_head</code> 与补丁摘要；写前持久化候选状态并 DB 原子认领防并发覆盖，超时进入 <code>result_uncertain</code> 经读回对账定案。</p>
+      <div class="arch-meta">fix-apply.mjs · remote-write.mjs</div>
+    </article>
+
+    <article class="arch-card">
+      <span class="arch-tag">零信任出站 · 防注入</span>
+      <h3>LLM 出站治理与凭据掩码</h3>
+      <p>租户级出站授权门控（未授权零网络请求）；统一经 Context Builder 实施正则族 + Shannon 熵（&gt;3.5）双通道凭据掩码并 fail-closed；固定指令与不可信数据信封物理隔离，审计仅落哈希清单、零源码副本留存。</p>
+      <div class="arch-meta">context-builder.mjs · egress-audit.mjs</div>
+    </article>
+
+    <article class="arch-card">
+      <span class="arch-tag">rc8.5 新增 · 流式结算</span>
+      <h3>Matrix /sync 流式结算与入口预检</h3>
+      <p>GitHub / Gitee Webhook 入队前执行契约预检与 delivery 幂等去重；PostgreSQL CAS 推进与死信队列兜底；Worker→Console 经 Matrix <code>/sync</code> 游标持久化事件流秒级推送结算，支持断线续传与多房间隔离。</p>
+      <div class="arch-meta">matrix-sync-listener.mjs · review-service.mjs</div>
+    </article>
+
+    <article class="arch-card">
+      <span class="arch-tag">RBAC · 租户隔离</span>
+      <h3>非递增五角色与权限物理分离</h3>
+      <p>Schema <code>v29</code> 核心业务表按 <code>tenant_id</code> 复合外键收窄，撤权后同会话下一请求即 <code>403</code>；平台管理与业务裁定分离——<code>platform_admin</code> 无源码读取及审批/应用/合并权，邀请三层拦截防提权。</p>
+      <div class="arch-meta">authz.mjs · schema.mjs · <a href="roles.html">角色矩阵</a></div>
+    </article>
+
+    <article class="arch-card">
+      <span class="arch-tag">GitHub + Gitee · Fail-Closed</span>
+      <h3>多平台契约与双面 CI 资格门</h3>
+      <p>抽象规范事件 v1 与上下文完整性三态冻结；合并资格门同时分页核验 GitHub Commit Statuses 与 Check Runs 双面状态——任一读取失败或无 CI 运行均 fail-closed 阻断，绝不降级放行。</p>
+      <div class="arch-meta">forge/index.mjs · patch-applicability.mjs</div>
+    </article>
+
+    <article class="arch-card">
+      <span class="arch-tag">OCI Digest · SBOM</span>
+      <h3>可验证供应链与原子换版</h3>
+      <p>官方 Console、pgvector 与 bge-m3 sidecar 全量钉死不可变 OCI Digest；随附 CycloneDX SBOM（48 组件）、SHA256SUMS 与 Trivy 零漏洞/零密钥扫描记录，支持离线 tar 部署与一级回滚。</p>
+      <div class="arch-meta"><a href="downloads.html">下载与校验</a> · <a href="upgrade-rollback.html">升级与回滚</a></div>
+    </article>
+  </div>
+</section>
+
+<section class="section section-alt">
+  <div class="section-head">
+    <div>
+      <div class="section-kicker">GET STARTED</div>
+      <h2 class="section-title">双路径快速开始</h2>
+      <p class="section-sub">标准命令行部署或直接交给 AI 编码助手逐步执行；若你已被管理员邀请加入现有实例，直接阅读<a href="user-guide.html">首次使用</a>。</p>
+    </div>
+  </div>
+  <div class="dual-track">
+    <div class="track-panel">
+      <h3>路径 A · 标准 Docker Compose 部署</h3>
+      <p>使用官方钉死不可变 digest 的 <code>deploy/selfhost</code> 模板；首次启动自动建库并经 <code>MU_BOOTSTRAP_ADMIN_SUBJECT</code> 初始化首任管理员。</p>
+      <pre><code>git clone https://github.com/nghqqa/MergePilot.git
 cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.35.6-rc8.5
 cd deploy/selfhost
-cp .env.example .env        <span style="color:#5aa39b"># 填必填项（见部署指南或 INSTALL-WITH-AI.md）</span>
-node preflight.mjs          <span style="color:#5aa39b"># 一键只读检查，关键项失败即退出</span>
+cp .env.example .env &amp;&amp; chmod 600 .env
+node preflight.mjs                <span style="color:#5aa39b"># 一键只读预检</span>
 docker compose --env-file .env up -d
-curl http://127.0.0.1:48500/api/health</code></pre>
-  <p style="margin-top:16px;"><a href="quickstart.html">完整快速开始 →</a>&nbsp;&nbsp;<a href="downloads.html#release-scope">下载与发布范围 →</a></p>
+curl -s http://127.0.0.1:48500/api/health</code></pre>
+      <div class="track-actions">
+        <a class="btn btn-primary" href="quickstart.html">完整部署指南</a>
+        <a href="multitenant-webhook.html">公网反代与 Webhook 配置 →</a>
+      </div>
+    </div>
+
+    <div class="track-panel track-panel-ai">
+      <h3>路径 B · AI 编码助手安装卡</h3>
+      <p>觉得环境变量、OAuth 与反代步骤繁琐？把仓库内置的 <code>INSTALL-WITH-AI.md</code> 指令卡整段发给你的 AI 编码助手（Claude Code / Codex / Cursor 等）：</p>
+      <ul class="track-list">
+        <li>每一步都附带可校验的成功判据，跳过健康门即停止；</li>
+        <li>明确硬性安全边界（不直曝 48500、不提交 <code>.env</code>）；</li>
+        <li>卡点时把报错与日志贴回即可定位排障。</li>
+      </ul>
+      <div class="track-actions">
+        <a class="btn btn-outline" href="quickstart.html#ai-card">打开 AI 安装指令卡</a>
+        <a href="https://github.com/nghqqa/MergePilot/blob/main/INSTALL-WITH-AI.md">仓库原文件 ↗</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="status-banner">
+    <div>
+      <h3>项目维护状态与自托管边界</h3>
+      <p>MergePilot 自 2026-10-26 起处于<strong>事件响应维护</strong>（2026-11-11 解冻轮发布 <code>rc.35.6-rc8.5</code> 后已恢复冻结）：<code>main</code> 仅接受安全补丁与文档事实同步，现有 CI 门不变。本站为纯静态文档，<strong>不提供托管 Console 或登录入口</strong>；请先了解<a href="limitations.html">已知限制与支持矩阵</a>再投入团队使用。</p>
+    </div>
+    <div class="status-links">
+      <a class="btn btn-outline" href="limitations.html">能力边界与限制</a>
+      <a class="btn btn-outline" href="https://github.com/nghqqa/MergePilot/blob/main/FROZEN.md">查看 FROZEN.md ↗</a>
+    </div>
+  </div>
 </section>
 </main>
 <footer class="footer">MergePilot 0.2.0-beta.6-rc.35.6-rc8.5 · Apache-2.0 · 自托管发行版 · 本站为静态文档，不提供托管服务</footer>

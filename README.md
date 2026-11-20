@@ -2,7 +2,7 @@
 
 **自托管的多 Agent PR 审查与受控变更工作台。审查留痕，远端写入与合并由维护者决定。**
 
-[官网](https://docs.nghqqa.cn/) · [快速开始](https://docs.nghqqa.cn/quickstart.html) · [使用文档](https://docs.nghqqa.cn/docs.html) · [下载与校验](https://docs.nghqqa.cn/downloads.html)
+[官网](https://mergepilot.nghqqa.cn/) · [快速开始](https://mergepilot.nghqqa.cn/quickstart.html) · [使用文档](https://mergepilot.nghqqa.cn/docs.html) · [下载与校验](https://mergepilot.nghqqa.cn/downloads.html)
 
 [![Release](https://img.shields.io/github/v/release/nghqqa/MergePilot?label=Release&color=0e6b62)](https://github.com/nghqqa/MergePilot/releases/latest)
 [![Console Gate](https://github.com/nghqqa/MergePilot/actions/workflows/console-backend.yml/badge.svg)](https://github.com/nghqqa/MergePilot/actions/workflows/console-backend.yml)
@@ -74,8 +74,8 @@ PR 事件接入 → 审查发现 → 按策略进入修复与验证 → Console 
 
 Console、数据库和部署配置由你自行管理；官网是文档入口，**不是托管版 Console 或登录入口**。
 
-1. 阅读[快速开始](https://docs.nghqqa.cn/quickstart.html)，准备 Docker Compose、Node.js ≥ 20、GitHub App、OAuth App 和审查用的 LLM 端点。
-2. 选择 [rc.35.6-rc8.5 部署包](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8.5)（镜像 OCI index `ghcr.io/nghqqa/mergepilot-console@sha256:f8bc369f5b046536103d75ba53c4863871abb3ecddbdfe920baf29c6428afe9a`；离线 tar、SHA256SUMS、48 组件 SBOM 和扫描记录见该 Release 与[下载与校验](https://docs.nghqqa.cn/downloads.html)），或使用下面的仓库部署方式。
+1. 阅读[快速开始](https://mergepilot.nghqqa.cn/quickstart.html)，准备 Docker Compose、Node.js ≥ 20、GitHub App、OAuth App 和审查用的 LLM 端点。
+2. 选择 [rc.35.6-rc8.5 部署包](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8.5)（镜像 OCI index `ghcr.io/nghqqa/mergepilot-console@sha256:f8bc369f5b046536103d75ba53c4863871abb3ecddbdfe920baf29c6428afe9a`；离线 tar、SHA256SUMS、48 组件 SBOM 和扫描记录见该 Release 与[下载与校验](https://mergepilot.nghqqa.cn/downloads.html)），或使用下面的仓库部署方式。
 3. 按[部署指南](deploy/selfhost/README.md)完成配置和首管理员初始化，再登录你自己的 Console。**觉得安装手续太多？**把仓库里的 [INSTALL-WITH-AI.md](INSTALL-WITH-AI.md) 整段复制给你的 AI 编码助手，让它带你逐步执行（每步都有可校验判据），或遇到卡点把该文件与报错一起交给 AI 排障。
 4. 日常使用与验收：[用户指南](docs/delivery/USER-GUIDE.md)（含受邀用户/自托管管理员两条首次使用路径）、[验收清单](docs/delivery/ACCEPTANCE-CHECKLIST.md)。
 
@@ -129,7 +129,7 @@ AgentTeams 是独立执行器，不是所有角色统一走外部 LLM。可选 c
 
 | 要做什么 | 入口 |
 | --- | --- |
-| 浏览产品与文档 | [官网](https://docs.nghqqa.cn/) · [文档索引](https://docs.nghqqa.cn/docs.html) |
+| 浏览产品与文档 | [官网](https://mergepilot.nghqqa.cn/) · [文档索引](https://mergepilot.nghqqa.cn/docs.html) |
 | 安装、配置、登录与邀请 | [自托管部署指南](deploy/selfhost/README.md) · [AI 辅助安装卡](INSTALL-WITH-AI.md) · [分步部署指南](docs/delivery/DEPLOY-GUIDE.md) |
 | 日常使用 / 排障 / 验收 | [用户指南](docs/delivery/USER-GUIDE.md) · [排障手册](docs/delivery/TROUBLESHOOTING.md) · [验收清单](docs/delivery/ACCEPTANCE-CHECKLIST.md) |
 | 部署修复验证执行器 | [AgentTeams RUNBOOK](deploy/agentteams-beta/RUNBOOK.md) |
