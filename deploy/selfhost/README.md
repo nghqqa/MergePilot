@@ -10,7 +10,7 @@
 > 供应链档案：SBOM（CycloneDX，48 组件）、trivy 扫描（**漏洞全零** / 0 HIGH/CRITICAL /
 > secrets=0；基础镜像 CVE-2026-111497 brotli 已双面闭合）、离线 tar SHA256 见「镜像获取与校验」与
 > [Release 附件](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8.5)。
-> 相对 rc.35.6-rc8.4：schema **v29 不变（零迁移）**；rc8.4.1=安全修复版（仅基础镜像与构建定义变更，后端逻辑与 rc8.3 一致），变更明细见
+> 相对 rc.35.6-rc8.4.1：schema **v29 不变（零迁移）**；`rc.35.6-rc8.5` 含 `rc8.4.1` 的 CVE-2026-111497 安全修复，并新增 Matrix `/sync` 流式事件投递与 Webhook 入口预检，变更明细见
 > [Release 说明](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8.5)。
 > 能力口径见 [docs/delivery/CAPABILITY-MATRIX.md](../../docs/delivery/CAPABILITY-MATRIX.md)。
 >
@@ -28,8 +28,7 @@ node preflight.mjs --live     # 启动后活体探测（health/schema/queue）
 curl http://127.0.0.1:48500/api/health
 ```
 
-首次启动自动完成 schema 初始化（至 v29）；随后访问 `http://127.0.0.1:48500/multiuser`
-完成 GitHub OAuth 登录（首个用户需先经邀请，见「多租户与 webhook」）。
+首次启动自动完成 schema 初始化（至 v29）并按 `MU_BOOTSTRAP_ADMIN_SUBJECT` 绑定首任平台管理员；默认 `up -d` 仅启动 `postgres`、`console`、`webhook-ingress`（可选 `bge-m3` 归在 `--profile rag` 下，避免匿名拉取私有 sidecar 报 401）。随后访问 `http://127.0.0.1:48500/login` 完成 GitHub OAuth 登录（其余成员经管理员邀请加入，见「多租户与 webhook」）。
 
 ### 生产模式首次管理员登录（fixture 关闭，必读）
 
@@ -40,7 +39,7 @@ curl http://127.0.0.1:48500/api/health
 `https://api.github.com/users/<login>` 的 `id` 字段）。**subject 契约=完整 provider
 前缀串**（与 OAuth 登录落库的 subject 同形，bootstrap 不去前缀、仅把身份行的 provider
 列落成对应真实 provider）。含此修复的镜像自 **rc8 起生效**；**rc7 镜像**仍把该值落成
-fixture 死行（**rc8.4.1 镜像无此问题**，env 路径开箱即用；下述过渡路径仅供 rc7 及更早镜像参考）：
+fixture 死行（**rc8+ 镜像含 rc8.5 无此问题**，env 路径开箱即用；下述过渡路径仅供 rc7 及更早镜像参考）：
 
 ```bash
 MU_BOOTSTRAP_ADMIN_LOGIN=<你的管理员显示名>            # 缺省 pilot-admin
@@ -186,16 +185,14 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 
 **供应链档案（rc.35.6-rc8.5）**：
 
-- SBOM：CycloneDX · **47 组件**（`sbom-rc356rc3-cyclonedx.json`，随 Release 发布）；
-- 漏洞/秘密扫描：trivy（`trivy-rc356rc3-scan.json`）：**0 HIGH/CRITICAL，0 MEDIUM，secrets=0**（对照 rc.35.6-rc1：CVE-2026-85091 已闭合，无新增）；
-- 构建来源：源码 tag `v0.2.0-beta.6-rc.35.6-rc7`（commit `b7a0fcaf63ce3157a626c41918c8fdf60547ad74`，tag 与镜像同源，GIT_COMMIT 构建期注入）；
-- RAG（可选）：run 页知识库引用需配置 RAGTRIAL_* env 并导入语料（见 RELEASE-CHECKLIST 与官网下载页）；
+- SBOM：CycloneDX · **48 组件**（随 `rc.35.6-rc8.5` Release 发布）；
+- 漏洞/秘密扫描：trivy：**漏洞全零（0 CRITICAL / 0 HIGH / 0 MEDIUM），secrets=0**（含 CVE-2026-85091 zlib 与 CVE-2026-111497 brotli 双面闭合）；
+- 构建来源：源码 tag `v0.2.0-beta.6-rc.35.6-rc8.5`（commit `3879e390ece11e39e34861bcefe5a39e5deca49b`，tag 与镜像同源，`GIT_COMMIT` 构建期注入）；
+- RAG（可选）：需按离线 tar 导入 `bge-sidecar` 并准备模型文件后，使用 `docker compose --env-file .env --profile rag up -d` 启用；
   schema v29 不变（零迁移，数据库双向兼容）；
-- 历史版本（rc.35.6-rc1 及更早）的 digest/附件以各自 Release 页为准，本文件只维护当前版本。
+- 历史版本（rc.35.6-rc8.4.1 及更早）的 digest/附件以各自 Release 页为准，本文件只维护当前版本。
 
-> `48590` 端口与 `beta-webhook-proxy` 容器是 MergePilot 开发方内部测试环境的组件，
-> **不属于自托管发行版，也不是官方托管服务入口**。自托管部署的对外入口是
-> 你自己的 TLS 反向代理（见安全加固清单）。
+> 说明：`webhook-ingress`（默认 `127.0.0.1:48590`）是本自托管模板内置的 webhook-only 反代入口，**仅放行 `POST /api/mu/github/webhook` 与 `GET /api/health`**（其余路径一律 404）。对外公网暴露须由部署者自建 TLS 反向代理或隧道（见下方「安全加固清单」）；若同时使用 **Gitee Webhook**（`POST /api/mu/gitee/webhook`），须在反代中将其直接转发至 `127.0.0.1:48500`（直指 `48590` 会返回 404）。
 
 ## 从源码构建
 
@@ -401,13 +398,11 @@ schtasks /Create /TN "MergePilot-Attest" /SC ONSTART /RU SYSTEM ^
 3. **隔离语义**：事件租户跟 installation 走；八张业务表按 tenant_id 强制收窄；
    撤权后同会话下一请求即 403；`platform_admin` 永不可经邀请授予（API/claim/DB 三层拒绝）。
 
-## 首个平台管理员初始化（生产）
+## 首个平台管理员初始化（生产 · 数据库直授回退路径）
 
-> 依据 rc.16 源码：`mu/store.mjs bootstrap()` 启动即创建 `default` 租户与 **fixture 引导操作员**
-> （默认登录名 `pilot-admin`，provider=`fixture`，仅 `MU_ALLOW_FIXTURE_LOGIN=1` 时可登录——生产保持关闭）；
-> OAuth 回调只接受**事先创建的邀请**（无邀请 → `not_invited`，无公共自动注册）；
-> 邀请永不授予 `platform_admin`（API 校验 / claim 守卫 / DB CHECK 三层拒绝）。
-> 因此**首个平台管理员由部署者在数据库直授**——这是设计行为，不是缺陷。
+> **`rc8+`（含当前推荐版本 `rc.35.6-rc8.5`）无需手工 SQL**：在 `.env` 配置
+> `MU_BOOTSTRAP_ADMIN_SUBJECT=github-oauth:<你的GitHub数字id>`（或 `gitee-oauth:<数字id>`）即可在首次启动时自动幂等初始化首任 `platform_admin`（见顶部「生产模式首次管理员登录」）。
+> 下方 DBA SQL 仅用于既有空库手动授权、`rc7` 及更早镜像，或紧急恢复管理员身份。邀请永不授予 `platform_admin`（API 校验 / claim 守卫 / DB CHECK 三层拒绝）。
 
 **前提**：console 已启动（`docker compose ps` 全部 healthy）、schema 已初始化至 v29；
 已知自己的 GitHub 数字 user id（`https://api.github.com/users/<login>` 返回 JSON 的 `id` 字段）。
@@ -522,13 +517,65 @@ docker cp mergepilot-postgres-1:/tmp/mu.backup ./mu-$(date +%F).backup
 # 恢复：docker exec -i mergepilot-postgres-1 pg_restore -U postgres -d mu --clean < mu.backup
 ```
 
-## 安全加固清单
+## 安全加固清单与生产反代模板
 
-- 对外暴露**必须**前置 TLS 反代——强制，非建议；明文 HTTP 不允许承载已认证会话。Caddy 示例：`reverse_proxy 127.0.0.1:48500`（自动证书）。
-  保持 console/webhook-ingress 端口绑定 127.0.0.1；
-- 防火墙仅放行反代端口；数据库/keystore/模型卷不对外；
+- **两种公网暴露拓扑（按需二选一，禁止直接裸露 `48500` 或明文 HTTP）**：
+  - **拓扑 A（单域名 HTTPS 团队共用）**：`https://你的域名` 统一终止 TLS；`/api/mu/github/webhook` 转发至 `127.0.0.1:48590`，Console/OAuth（及 Gitee Webhook `/api/mu/gitee/webhook`）转发至 `127.0.0.1:48500`，反代层加限流与 HTTP→HTTPS 301。
+  - **拓扑 B（高敏内网最小暴露面）**：公网仅暴露 `48590`（GitHub Webhook）；`48500` 仅限内网 / VPN / Tailscale 访问。
+- **Nginx 生产模板（拓扑 A；拓扑 B 删去 `/api/` 与 `/` 块即可）**：
+
+```nginx
+limit_req_zone $binary_remote_addr zone=mp_api:10m rate=60r/m;
+limit_req_zone $binary_remote_addr zone=mp_webhook:10m rate=120r/m;
+
+server {
+    listen 80;
+    server_name mp.example.com;
+    return 301 https://$host$request_uri;
+}
+server {
+    listen 443 ssl http2;
+    server_name mp.example.com;
+    ssl_certificate     /etc/letsencrypt/live/mp.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/mp.example.com/privkey.pem;
+
+    location = /api/mu/github/webhook {
+        limit_req zone=mp_webhook burst=30 nodelay;
+        proxy_pass http://127.0.0.1:48590;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location = /api/mu/gitee/webhook {
+        limit_req zone=mp_webhook burst=30 nodelay;
+        proxy_pass http://127.0.0.1:48500;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location /api/ {
+        limit_req zone=mp_api burst=20 nodelay;
+        proxy_pass http://127.0.0.1:48500;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location / {
+        proxy_pass http://127.0.0.1:48500;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+- **Caddy（自动 TLS）与 Cloudflare Tunnel（无公网 IP）** 完整模板及端到端验证步骤见官网 [安全加固清单](https://mergepilot.nghqqa.cn/security.html) 与 [多租户与 webhook](https://mergepilot.nghqqa.cn/multitenant-webhook.html)；
+- 防火墙仅放行反代 80/443 端口；`48500` / `48590` 保持回环绑定；数据库/keystore/模型卷不对外；
 - `.env` 与私钥文件权限 0600；secrets 不入 git、不入日志（日志层无 secrets 输出为设计合同）；
-- 入口限流建议：反代层对 `/api/*` 限 60 req/min/IP，webhook 路径 120 req/min/IP；
 - 定期轮换：`CONSOLE_SESSION_SECRET`（会话全失效，用户重登）、keystore（rotate API，旧 key 即刻失效）；
 - webhook 端点有 HMAC 签名 + delivery 一次性去重；管理面全部要求会话 + CSRF。
 
