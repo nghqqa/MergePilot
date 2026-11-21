@@ -24,7 +24,8 @@
 
 1. 用户的 **GitHub 数字 id**：让用户访问 `https://api.github.com/users/<GitHub用户名>`，记下 `id` 字段（纯数字）——这是初始管理员的登录身份绑定；
 2. 两把随机值：`openssl rand -hex 16`（数据库口令）与 `openssl rand -base64 32`（会话密钥）；
-3. （可后补）LLM API key（openai 兼容端点）、GitHub App/OAuth App、Gitee PAT——**没有这些也能先装起来看面板**，审查接入稍后做。
+3. **GitHub OAuth App 凭据**（第 4 步浏览器登录必需）：在 GitHub Settings → Developer settings → OAuth Apps 新建一个 App，Homepage URL 填 `http://127.0.0.1:48500`，Authorization callback URL 填 `http://127.0.0.1:48500/api/mu/auth/oauth/github/callback`（公网部署时换为你的 `https://` 域名），记下 Client ID 与 Client Secret；
+4. （可后补）LLM API key（openai 兼容端点）、GitHub App（收 webhook）、Gitee PAT——**没有这些也能先完成启动与管理员登录**，审查接入第 5 步再补。
 
 ### 第 1 步：取模板
 
@@ -37,14 +38,17 @@ cp .env.example .env && chmod 600 .env
 
 成功判据：`git checkout` 输出指向 tag `v0.2.0-beta.6-rc.35.6-rc8.5`；`.env` 存在。
 
-### 第 2 步：填最小必填集（先跑起来，审查接入可后补）
+### 第 2 步：填最小必填集（先跑起来并完成首登，审查接入可后补）
 
 编辑 `.env`，至少设置：
 - `POSTGRES_PASSWORD=<第0步生成的口令>`
 - `CONSOLE_SESSION_SECRET=<第0步生成的密钥>`
-- `MU_BOOTSTRAP_ADMIN_SUBJECT=github-oauth:<第0步的GitHub数字id>`——**必须带 `github-oauth:` 前缀**（这是初始管理员的身份绑定；不带前缀在生产模式将无法登录）。
+- `MU_BOOTSTRAP_ADMIN_SUBJECT=github-oauth:<第0步的GitHub数字id>`——**必须带 `github-oauth:` 前缀**（这是初始管理员的身份绑定；不带前缀在生产模式将无法登录）；
+- `MU_GITHUB_OAUTH_CLIENT_ID=<第0步OAuth App Client ID>`
+- `MU_GITHUB_OAUTH_CLIENT_SECRET=<第0步OAuth App Client Secret>`
+- `MU_GITHUB_OAUTH_CALLBACK_URL=http://127.0.0.1:48500/api/mu/auth/oauth/github/callback`（公网部署换为 `https://你的域名/...`）
 
-可选组件说明：`bge-m3`（RAG 知识库检索）不放入模型文件会健康检查失败——**不用 RAG 就 `docker compose stop bge-m3`**，不影响审查主功能；LLM/GitHub 段留空不阻塞启动。
+可选组件说明：`bge-m3`（RAG 知识库检索）默认归在 `profiles: ["rag"]` 下，普通 `docker compose up -d` 不会拉取该私有镜像，不影响审查主功能（需启用 RAG 时先导入离线 tar 与模型文件，再加 `--profile rag`）；LLM/GitHub App 段留空不阻塞启动与首登。
 
 ### 第 3 步：启动与健康门（硬性判据）
 
@@ -66,9 +70,7 @@ curl -s http://127.0.0.1:48500/api/health
 
 ### 第 5 步（可后补）：接入审查能力
 
-按 `.env` 注释段填写：`MU_LLM_*`（审查管线，openai 兼容端点）；GitHub App + OAuth App
-（仓库接入与登录；App 创建步骤见仓库 `deploy/selfhost/README.md`「多租户与 webhook」节；
-回调用 `http://127.0.0.1:48500/...` 时本机评估即可用）。改完执行
+按 `.env` 注释段填写：`MU_LLM_*`（审查管线，openai 兼容端点）与 GitHub App（仓库接入与 Webhook；App 创建与公网反代配置见仓库 `deploy/selfhost/README.md`「多租户与 webhook」及「安全加固清单」节）。改完执行
 `docker compose --env-file .env up -d` 应用。
 
 ### 硬性边界（任何情况下都不要做）

@@ -95,7 +95,7 @@ docker compose --env-file .env up -d
 node preflight.mjs --live
 ```
 
-本机登录地址：`http://127.0.0.1:48500/login`。**容器健康不等于审查链路就绪**：还需核实身份初始化、
+本机登录地址：`http://127.0.0.1:48500/login`（默认 `up -d` 仅启动 `postgres`、`console`、`webhook-ingress`；可选 `bge-m3` 归在 `--profile rag` 下）。**容器健康不等于审查链路就绪**：还需核实身份初始化、
 Webhook 接收、LLM 调用，以及可选的修复验证执行器。
 
 - **首次管理员**：生产关闭 fixture 登录；首个 `platform_admin` 需部署者通过 `MU_BOOTSTRAP_ADMIN_SUBJECT` 或数据库初始化绑定。见[首管理员步骤](deploy/selfhost/README.md#首个平台管理员初始化生产)。

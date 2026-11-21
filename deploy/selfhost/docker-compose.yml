@@ -9,7 +9,7 @@
 #   - 仅 console 与 webhook-ingress 发布端口，且默认绑定 127.0.0.1（对外暴露请前置 TLS 反代，见 README 安全节）
 #   - postgres / bge-sidecar 不发布任何端口（仅 internal 网络可达）
 #   - 全部服务 restart: unless-stopped
-#   - 镜像引用：console=GHCR 不可变 digest pin（当前=rc.35.6-rc7 官方构建，预发布候选）；pgvector 与 bge-sidecar 为已推送的不可变 digest
+#   - 镜像引用：console=GHCR 不可变 digest pin（当前=rc.35.6-rc8.5 官方构建，事件投递+入口预检版）；pgvector 与 bge-sidecar 为已推送的不可变 digest
 #   - cchain 三键为可选：未满足时 cchain=BLOCKED（fail-closed 如实呈现，不影响其余功能）
 
 name: mergepilot
@@ -36,7 +36,9 @@ services:
     # 安全基线：不发布端口（仅 internal 网络可达）
 
   bge-m3:
-    # RAG 检索嵌入 sidecar（可选：不接 RAG 可整段注释，console 对 NOT_WIRED 如实降级）
+    # RAG 检索嵌入 sidecar（可选：默认通过 profiles 跳过，避免匿名拉取私有镜像 401；
+    # 需启用 RAG 时先按 README 导入离线 tar/模型文件，再运行 docker compose --env-file .env --profile rag up -d）
+    profiles: ["rag"]
     # 在线安装默认 digest pin；GHCR 上该包为私有（2026-10-23 实证 401）——离线安装时
     # 用同目录 model/../offline 的 tag 版 tar（docker load）并在 .env 设
     # BGE_SIDECAR_IMAGE=ghcr.io/nghqqa/mergepilot-bge-sidecar:v0.2.0-beta.6-rc.9 覆盖
@@ -59,8 +61,8 @@ services:
     networks: [internal]
 
   console:
-    # 官方镜像（GHCR 不可变 digest；digest pin = rc.35.6-rc8.4.1 官方构建（安全修复版预发布），
-    # OCI index 与 tag v0.2.0-beta.6-rc.35.6-rc8.4.1 同源——升级/回滚按对应 Release 说明改此处）。
+    # 官方镜像（GHCR 不可变 digest；digest pin = rc.35.6-rc8.5 官方构建（事件投递+入口预检版，含 rc8.4.1 安全修复），
+    # OCI index 与 tag v0.2.0-beta.6-rc.35.6-rc8.5 同源——升级/回滚按对应 Release 说明改此处）。
     image: ghcr.io/nghqqa/mergepilot-console@sha256:f8bc369f5b046536103d75ba53c4863871abb3ecddbdfe920baf29c6428afe9a
     restart: unless-stopped
     ports:
