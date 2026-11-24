@@ -70,36 +70,36 @@
   <div class="showcase-hero">
     <div class="showcase-bar">
       <span class="showcase-dots" aria-hidden="true"><span></span><span></span><span></span></span>
-      <span>MergePilot Console · PR 总览、风险状态与审查进度</span>
-      <a href="assets/images/console-overview.png" target="_blank" rel="noopener">查看原图 ↗</a>
+      <span>MergePilot · PR #12 六步受控闭环实测演示（24 秒循环）</span>
+      <a href="assets/images/mergepilot-closed-loop.gif" target="_blank" rel="noopener">查看原图 ↗</a>
     </div>
-    <a href="assets/images/console-overview.png" target="_blank" rel="noopener">
-      <img src="assets/images/console-overview.png" alt="MergePilot Console 总览界面：PR 列表、风险状态与审查进度" loading="eager">
+    <a href="assets/images/mergepilot-closed-loop.gif" target="_blank" rel="noopener">
+      <img src="assets/images/mergepilot-closed-loop.gif" alt="MergePilot PR #12 受控闭环演示：P1 审批门 → Fixer/Verifier 独立复验 → 两阶段预览应用修复 → 新 head 旧证据阻断 → 资格门全绿确认合并" loading="eager">
     </a>
     <div class="showcase-caption">
-      <span>集中查看租户内全部绑定仓库的 PR 审查进度、待审批票据与阻断原因；结论与证据全部落在你自己的实例中。</span>
-      <span>总览图：rc.16 脱敏测试环境</span>
+      <span>完整呈现 P1 具名审批门 → Fixer / Leader / Verifier 独立复验 → 两阶段预览应用修复 → 新 commit 旧证据自动失效阻断 → 资格门全绿确认合并。</span>
+      <span><a href="assets/images/console-overview.png" target="_blank" rel="noopener">查看 Console 总览静图（rc.16）↗</a></span>
     </div>
   </div>
 
   <div class="shot-grid">
     <article class="shot-card">
-      <a class="shot-thumb" href="assets/images/pipeline-agents.png" target="_blank" rel="noopener">
-        <img src="assets/images/pipeline-agents.png" alt="多角色审查管线与发现落库实测截图" loading="lazy">
-      </a>
-      <div class="shot-body">
-        <div class="shot-head"><span class="shot-step">01</span><h3>多角色审查管线与发现落库</h3></div>
-        <p>规则引擎、外部模型与 AgentTeams（Fixer / Leader / Verifier）逐轮耗时、执行状态与结构化发现分列留痕，未执行项如实标注。</p>
-      </div>
-    </article>
-
-    <article class="shot-card">
       <a class="shot-thumb" href="assets/images/approval-gate.png" target="_blank" rel="noopener">
         <img src="assets/images/approval-gate.png" alt="P0/P1 高危修复具名审批门实测截图" loading="lazy">
       </a>
       <div class="shot-body">
-        <div class="shot-head"><span class="shot-step">02</span><h3>P0/P1 高危修复具名审批门</h3></div>
+        <div class="shot-head"><span class="shot-step">01</span><h3>P0/P1 高危修复具名审批门</h3></div>
         <p>分支保护状态如实探测（未知即 fail-closed）；高危发现逐条生成绑定当前 head 的具名审批票，全批准后才放行修复轮。</p>
+      </div>
+    </article>
+
+    <article class="shot-card">
+      <a class="shot-thumb" href="assets/images/pipeline-agents.png" target="_blank" rel="noopener">
+        <img src="assets/images/pipeline-agents.png" alt="多角色审查与独立复验落库实测截图" loading="lazy">
+      </a>
+      <div class="shot-body">
+        <div class="shot-head"><span class="shot-step">02</span><h3>多角色审查与独立复验落库</h3></div>
+        <p>规则引擎、外部模型与 AgentTeams（Fixer / Leader / Verifier）逐轮耗时、执行状态与结构化发现分列留痕，未执行项如实标注。</p>
       </div>
     </article>
 
