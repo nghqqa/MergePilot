@@ -1,8 +1,10 @@
 # MergePilot
 
-**自托管的多 Agent PR 审查与受控变更工作台。审查留痕，远端写入与合并由维护者决定。**
+**自托管的可审计多智能体 PR 审修工作台：Reviewer / Fixer / Verifier 独立复验，支持三类受控远端写（审查评论 / 应用修复 / 确认合并），高危修复强制人工审批并执行两阶段预览确认（绑定 head SHA 与补丁哈希）。**
 
-[官网](https://mergepilot.nghqqa.cn/) · [快速开始](https://mergepilot.nghqqa.cn/quickstart.html) · [使用文档](https://mergepilot.nghqqa.cn/docs.html) · [下载与校验](https://mergepilot.nghqqa.cn/downloads.html)
+> **Self-hosted, auditable multi-agent PR review & fix workbench with independent verification, human-in-the-loop approval, and two-phase confirmed remote writes bound to head SHA and patch hash.**
+
+**[项目官网](https://mergepilot.nghqqa.cn/)**（`https://mergepilot.nghqqa.cn/`） · [快速开始](https://mergepilot.nghqqa.cn/quickstart.html) · [使用文档](https://mergepilot.nghqqa.cn/docs.html) · [下载与校验](https://mergepilot.nghqqa.cn/downloads.html)
 
 [![Release](https://img.shields.io/github/v/release/nghqqa/MergePilot?label=Release&color=0e6b62)](https://github.com/nghqqa/MergePilot/releases/latest)
 [![Console Gate](https://github.com/nghqqa/MergePilot/actions/workflows/console-backend.yml/badge.svg)](https://github.com/nghqqa/MergePilot/actions/workflows/console-backend.yml)
@@ -21,17 +23,24 @@ required check、不绕过平台保护。
 
 ## 界面与受控闭环速览
 
+![MergePilot PR #12 受控闭环演示：P1 审批门 → Fixer/Verifier 独立复验 → 两阶段预览应用修复 → 新 head 旧证据阻断 → 资格门全绿确认合并](docs/assets/readme/mergepilot-closed-loop.gif)
+
+*上方动图基于隔离验收实仓 `PR #12` 真实界面合成（详见 [FIRST-USE-ACCEPTANCE](docs/acceptance/rc35.5-first-use/FIRST-USE-ACCEPTANCE.md)）。*
+
+<details>
+<summary>展开查看总览界面与逐帧高清静图（点击可放大）</summary>
+
 ![MergePilot Console：PR 列表、风险状态与审查进度](docs/assets/readme/console-overview-rc16.png)
 
-*点击下方缩略图可放大查看从「多角色审查 → 高危票据审批 → 预览应用修复 → 统一合并资格门」的完整实测界面：*
-
-| ① 多角色审查管线与发现落库 | ② P0/P1 高危修复具名审批门 |
+| ① P0/P1 高危修复具名审批门 | ② 多角色审查与独立复验落库 |
 | --- | --- |
-| [![多角色审查管线](docs/acceptance/rc35.5-first-use/evidence/07-403-binding-required-before-fix.png)](docs/acceptance/rc35.5-first-use/evidence/07-403-binding-required-before-fix.png)<br><sub>规则引擎、外部模型与 AgentTeams（Fixer / Leader / Verifier）逐轮耗时、状态与结构化发现分列留痕</sub> | [![高危修复审批门](docs/acceptance/rc35.5-first-use/evidence/01-first-p1-ticket-pending.png)](docs/acceptance/rc35.5-first-use/evidence/01-first-p1-ticket-pending.png)<br><sub>分支保护状态如实探测（未知即 fail-closed）；高危发现逐条生成具名审批票，全批准后才放行修复轮</sub> |
+| [![高危修复审批门](docs/acceptance/rc35.5-first-use/evidence/01-first-p1-ticket-pending.png)](docs/acceptance/rc35.5-first-use/evidence/01-first-p1-ticket-pending.png)<br><sub>分支保护状态如实探测（未知即 fail-closed）；高危发现逐条生成具名审批票，全批准后才放行修复轮</sub> | [![多角色审查管线](docs/acceptance/rc35.5-first-use/evidence/07-403-binding-required-before-fix.png)](docs/acceptance/rc35.5-first-use/evidence/07-403-binding-required-before-fix.png)<br><sub>规则引擎、外部模型与 AgentTeams（Fixer / Leader / Verifier）逐轮耗时、状态与结构化发现分列留痕</sub> |
 | **③ 应用修复两阶段预览（绑定 Head 与补丁摘要）** | **④ 统一合并资格门（拦截陈旧证据 → 重审全绿放行）** |
 | [![应用修复预览抽屉](docs/acceptance/rc35.5-first-use/evidence/05-apply-preview-drawer.png)](docs/acceptance/rc35.5-first-use/evidence/05-apply-preview-drawer.png)<br><sub>确认前强制核对远端当前 head 与补丁基准一致，并在隔离副本实测 `git apply --check` 通过</sub> | [![合并资格门全绿](docs/acceptance/rc35.5-first-use/evidence/03-merge-gate-all-green.png)](docs/acceptance/rc35.5-first-use/evidence/03-merge-gate-all-green.png)<br><sub>新 commit 推送后[旧 head 证据自动失效阻断](docs/acceptance/rc35.5-first-use/evidence/02-merge-gate-blocked-review-missing.png)；仅当前 head 审查完成 + 真实 CI 通过才开放合并确认</sub> |
 
-*注：总览图为 rc.16 测试环境历史数据（账号与组织已打码）；四宫格为隔离验收实仓 `PR #12` 端到端实测记录（详见 [FIRST-USE-ACCEPTANCE](docs/acceptance/rc35.5-first-use/FIRST-USE-ACCEPTANCE.md)）。*
+*注：总览图为 rc.16 测试环境历史数据（账号与组织已打码）；四宫格为隔离验收实仓 `PR #12` 端到端实测记录。*
+
+</details>
 
 ## 核心工程设计（Architecture Highlights）
 
@@ -68,7 +77,16 @@ PR 事件接入 → 审查发现 → 按策略进入修复与验证 → Console 
 
 ## 项目维护状态
 
-项目自 2026-10-26 起处于**事件响应维护**（2026-11-11 完成受控解冻轮并发布 `rc8.5` 后已恢复冻结）：`main` 仅接受安全补丁与文档事实同步类 PR，现有 CI 门不变；上游 HIGH/CRITICAL CVE、GitHub/Gitee 平台行为变更、真实用户故障或明确业务需求触发时按 [FROZEN.md](FROZEN.md) 的路径响应。当前推荐自托管版本为 [rc.35.6-rc8.5](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8.5)。
+项目自 2026-10-26 起处于**封箱冻结 / 事件响应维护态**（2026-11-11 完成受控解冻轮并发布 `rc8.5` 后已恢复冻结）：不再新增功能特性，`main` 仅接受安全补丁与文档事实同步类 PR，现有 CI 门不变；上游 HIGH/CRITICAL CVE、GitHub/Gitee 平台行为变更或真实用户故障触发时按 [FROZEN.md](FROZEN.md) 的路径响应。当前稳定参考版本为 [rc.35.6-rc8.5](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc8.5)。
+
+### 已验证基线与可复用工程参考
+
+| 维度 | 实测 / 交付基线（有据可查） |
+| --- | --- |
+| **端到端受控闭环** | 隔离实仓 `PR #12` 完整走通：P1 审批 → `git apply --check` 通过 → 机器人提交 (`be8789d6`) → 新 head 自动重审 → 统一合并资格门全绿 → 确认合并 (`e34f1d45`)，详见 [FIRST-USE-ACCEPTANCE](docs/acceptance/rc35.5-first-use/FIRST-USE-ACCEPTANCE.md) |
+| **权限与生产换版** | GitHub / Gitee 四角色真实浏览器 OAuth 登录与服务端授权边界逐项实测；`rc8.5` 生产换版后 T+1h 连续观察 22/22 样本全绿、0 重启、0 错误日志 |
+| **测试与供应链** | 后端 `node:test` 99 个测试文件（参见 [console/README.md](console/README.md)）；OCI Digest 全量钉死、CycloneDX SBOM（48 组件）与 Trivy 0 漏洞 / 0 密钥扫描记录 |
+| **可复用核心模式** | 可直接参考源码中的三大工程实现：① 防 TOCTOU 两阶段远端写与未知态对账（`fix-apply.mjs` / `remote-write.mjs`）；② 正则 + Shannon 熵双通道出站掩码与信封防注入（`context-builder.mjs`）；③ 非递增五角色 RBAC 物理分权（`authz.mjs`） |
 
 ## 开始使用
 
@@ -134,7 +152,7 @@ AgentTeams 是独立执行器，不是所有角色统一走外部 LLM。可选 c
 | 日常使用 / 排障 / 验收 | [用户指南](docs/delivery/USER-GUIDE.md) · [排障手册](docs/delivery/TROUBLESHOOTING.md) · [验收清单](docs/delivery/ACCEPTANCE-CHECKLIST.md) |
 | 部署修复验证执行器 | [AgentTeams RUNBOOK](deploy/agentteams-beta/RUNBOOK.md) |
 | 配置本地知识库 | [本地 RAG 指南](distribution/docs/LOCAL-RAG-GUIDE.md) |
-| 深入架构、API 与能力限制 | [能力矩阵](docs/delivery/CAPABILITY-MATRIX.md) · [技术文档目录](distribution/docs/) |
+| 深入架构、API 与能力限制 | [能力矩阵](docs/delivery/CAPABILITY-MATRIX.md) · [交付文档](docs/delivery/README.md) · [v0.1.0 早期单租户文档归档](distribution/docs/) |
 | 查看发布、冻结协议与变更 | [Releases](https://github.com/nghqqa/MergePilot/releases) · [FROZEN.md](FROZEN.md) · [CHANGELOG](CHANGELOG.md) |
 | 报告问题或参与贡献 | [Issues](https://github.com/nghqqa/MergePilot/issues) · [CONTRIBUTING](CONTRIBUTING.md) |
 

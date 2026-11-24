@@ -1,4 +1,7 @@
-# MergePilot Console
+# MergePilot Console（v0.1.0 早期单租户发行包归档）
+
+> **口径提示**：本目录（`distribution/docs/`）为 **v0.1.0 早期单租户发行包**的归档文档，对应早期只读预览阶段。
+> **当前生产重构版（`v0.2.0-beta.6-rc.35.6-rc8.5`，multiuser 正式形态）**已支持三类受控远端写（审查评论 / 应用修复 / 确认合并）与两阶段预览确认，请以 [项目主页](../../README.md) 与 [交付文档目录](../../docs/delivery/README.md) 为准。
 
 只读审查工作台（Review Workbench）：面向**个人开发者/小团队自托管**的 PR 安全
 审查实时控制台，展示 PR 阶段、待处理事项、运行趋势和系统健康状态；源码自建
