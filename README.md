@@ -23,19 +23,24 @@ required check、不绕过平台保护。
 
 ## 界面与受控闭环速览
 
-![MergePilot PR #12 受控闭环演示：多角色审查 → P1 审批门 → 两阶段预览应用修复 → 新 head 旧证据阻断 → 资格门全绿确认合并](docs/assets/readme/mergepilot-closed-loop.gif)
+![MergePilot PR #12 受控闭环演示：P1 审批门 → Fixer/Verifier 独立复验 → 两阶段预览应用修复 → 新 head 旧证据阻断 → 资格门全绿确认合并](docs/assets/readme/mergepilot-closed-loop.gif)
+
+*上方动图基于隔离验收实仓 `PR #12` 真实界面合成（详见 [FIRST-USE-ACCEPTANCE](docs/acceptance/rc35.5-first-use/FIRST-USE-ACCEPTANCE.md)）。*
+
+<details>
+<summary>展开查看总览界面与逐帧高清静图（点击可放大）</summary>
 
 ![MergePilot Console：PR 列表、风险状态与审查进度](docs/assets/readme/console-overview-rc16.png)
 
-*点击下方缩略图可放大查看从「多角色审查 → 高危票据审批 → 预览应用修复 → 统一合并资格门」的完整实测界面：*
-
-| ① 多角色审查管线与发现落库 | ② P0/P1 高危修复具名审批门 |
+| ① P0/P1 高危修复具名审批门 | ② 多角色审查与独立复验落库 |
 | --- | --- |
-| [![多角色审查管线](docs/acceptance/rc35.5-first-use/evidence/07-403-binding-required-before-fix.png)](docs/acceptance/rc35.5-first-use/evidence/07-403-binding-required-before-fix.png)<br><sub>规则引擎、外部模型与 AgentTeams（Fixer / Leader / Verifier）逐轮耗时、状态与结构化发现分列留痕</sub> | [![高危修复审批门](docs/acceptance/rc35.5-first-use/evidence/01-first-p1-ticket-pending.png)](docs/acceptance/rc35.5-first-use/evidence/01-first-p1-ticket-pending.png)<br><sub>分支保护状态如实探测（未知即 fail-closed）；高危发现逐条生成具名审批票，全批准后才放行修复轮</sub> |
+| [![高危修复审批门](docs/acceptance/rc35.5-first-use/evidence/01-first-p1-ticket-pending.png)](docs/acceptance/rc35.5-first-use/evidence/01-first-p1-ticket-pending.png)<br><sub>分支保护状态如实探测（未知即 fail-closed）；高危发现逐条生成具名审批票，全批准后才放行修复轮</sub> | [![多角色审查管线](docs/acceptance/rc35.5-first-use/evidence/07-403-binding-required-before-fix.png)](docs/acceptance/rc35.5-first-use/evidence/07-403-binding-required-before-fix.png)<br><sub>规则引擎、外部模型与 AgentTeams（Fixer / Leader / Verifier）逐轮耗时、状态与结构化发现分列留痕</sub> |
 | **③ 应用修复两阶段预览（绑定 Head 与补丁摘要）** | **④ 统一合并资格门（拦截陈旧证据 → 重审全绿放行）** |
 | [![应用修复预览抽屉](docs/acceptance/rc35.5-first-use/evidence/05-apply-preview-drawer.png)](docs/acceptance/rc35.5-first-use/evidence/05-apply-preview-drawer.png)<br><sub>确认前强制核对远端当前 head 与补丁基准一致，并在隔离副本实测 `git apply --check` 通过</sub> | [![合并资格门全绿](docs/acceptance/rc35.5-first-use/evidence/03-merge-gate-all-green.png)](docs/acceptance/rc35.5-first-use/evidence/03-merge-gate-all-green.png)<br><sub>新 commit 推送后[旧 head 证据自动失效阻断](docs/acceptance/rc35.5-first-use/evidence/02-merge-gate-blocked-review-missing.png)；仅当前 head 审查完成 + 真实 CI 通过才开放合并确认</sub> |
 
-*注：总览图为 rc.16 测试环境历史数据（账号与组织已打码）；四宫格为隔离验收实仓 `PR #12` 端到端实测记录（详见 [FIRST-USE-ACCEPTANCE](docs/acceptance/rc35.5-first-use/FIRST-USE-ACCEPTANCE.md)）。*
+*注：总览图为 rc.16 测试环境历史数据（账号与组织已打码）；四宫格为隔离验收实仓 `PR #12` 端到端实测记录。*
+
+</details>
 
 ## 核心工程设计（Architecture Highlights）
 
